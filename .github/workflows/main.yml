@@ -1,0 +1,56 @@
+name: Build APK Online
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # ------------------------------------------
+    # BƯỚC MỚI: VÀO THƯ MỤC ANDROID TRƯỚC
+    # ------------------------------------------
+    - name: Change Directory to Android Project
+      run: cd duix-android
+
+    - name: Set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+
+    # ------------------------------------------
+    # BƯỚC SỬA LỖI: CHẤM QUYỀN TRONG THƯ MỤC
+    # ------------------------------------------
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    # ------------------------------------------
+    # BƯỚC SỬA LỖI: CHẠY GRADLE TRONG THƯ MỤC
+    # ------------------------------------------
+    - name: Build with Gradle
+      run: ./gradlew assembleDebug --stacktrace
+
+    # ------------------------------------------
+    # TÌM FILE APK TRONG THƯ MỤC ANDROID
+    # ------------------------------------------
+    - name: Find APK location
+      id: find_apk
+      run: |
+        # Tìm trong thư mục duix-android
+        find ./duix-android -type f -name "*.apk" -size +1000k > apk_path.txt
+        
+        echo "Tìm thấy các file APK:"
+        cat apk_path.txt
+        
+        echo "path=$(head -n 1 apk_path.txt)" >> $GITHUB_OUTPUT
+
+    - name: Upload found APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Duix-Mobile-APK
+        path: ${{ steps.find_apk.outputs.path }}
