@@ -11,25 +11,25 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up JDK 11
+    # --- CHỈNH SỬA: THAY 11 THÀNH 17 ---
+    
+    - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
-        java-version: '11'
+        java-version: '17'
         distribution: 'temurin'
 
-    # --- BƯỚC MỚI: TẢI GRADLE VỀ ĐỂ TẠO FILE gradlew ---
+    # ------------------------------------------
+
     - name: Download Gradle (to generate wrapper)
       working-directory: ./
       run: |
-        # Tải bản Gradle 8.0
         wget https://services.gradle.org/distributions/gradle-8.0-bin.zip
         unzip -q gradle-8.0-bin.zip
 
-    # --- TẠO FILE gradlew TRONG THƯ MỤC DỰ ÁN ---
     - name: Generate Gradle Wrapper Scripts
       working-directory: ./duix-android/dh_aigc_android
       run: ../../gradle-8.0/bin/gradle wrapper --gradle-version 8.0
-      # Lệnh này sẽ tự tạo ra file 'gradlew' cho bạn
 
     - name: Grant execute permission for gradlew
       working-directory: ./duix-android/dh_aigc_android
