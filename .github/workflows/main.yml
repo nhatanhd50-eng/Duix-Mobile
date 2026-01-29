@@ -1,18 +1,70 @@
-Run cd duix-android/dh_aigc_android
-Downloading https://services.gradle.org/distributions/gradle-8.3-bin.zip
-............10%............20%.............30%............40%.............50%............60%.............70%............80%.............90%............100%
-------------------------------------------------------------
-Gradle 8.3
-------------------------------------------------------------
-Build time:   2023-08-17 07:06:47 UTC
-Revision:     8afbf24b469158b714b36e84c6f4d4976c86fcd5
-Kotlin:       1.9.0
-Groovy:       3.0.17
-Ant:          Apache Ant(TM) version 1.10.13 compiled on January 4 2023
-JVM:          17.0.17 (Eclipse Adoptium 17.0.17+10)
-OS:           Linux 6.11.0-1018-azure amd64
-FAILURE: Build failed with an exception.
-* What went wrong:
-A problem occurred configuring root project 'dh_aigc_android'.
-> java.nio.file.NoSuchFileException: /home/runner/work/Duix-Mobile/Duix-Mobile/duix-android/dh_aigc_android/gradle-8.3/lib/plugins/gradle-diagnostics-8.3.jar
-* Try:
+name: Build APK Final Manual Gradle
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Bước 1: Clone code
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+      with:
+        repository: nhatanhd50-eng/Duix-Mobile
+        ref: main
+
+    # Bước 2: Cài đặt Java 17
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    # Bước 3: Cài đặt Android SDK
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    # Bước 4: Cài Gradle 8.3 ở THƯ MỤC RIÊNG (không trong project)
+    - name: Install Gradle 8.3 Separately
+      run: |
+        echo "📥 Tải Gradle 8.3 vào /tmp (ngoài project)..."
+        cd /tmp
+        wget -q https://services.gradle.org/distributions/gradle-8.3-bin.zip
+        unzip -q gradle-8.3-bin.zip
+        
+        echo "✅ Gradle 8.3 đã cài tại /tmp/gradle-8.3"
+        /tmp/gradle-8.3/bin/gradle --version
+
+    # Bước 5: Tạo Gradle Wrapper trong project
+    - name: Create Gradle Wrapper
+      run: |
+        cd duix-android/dh_aigc_android
+        
+        echo "🧹 Xóa gradle cũ..."
+        rm -rf gradlew gradlew.bat gradle/
+        
+        echo "🔧 Tạo wrapper (dùng Gradle từ /tmp)..."
+        /tmp/gradle-8.3/bin/gradle wrapper --gradle-version 8.3
+        
+        chmod +x gradlew
+        
+        echo "✅ Kiểm tra wrapper:"
+        cat gradle/wrapper/gradle-wrapper.properties
+
+    # Bước 6: Build
+    - name: Build with Gradle
+      run: |
+        cd duix-android/dh_aigc_android
+        echo "🔍 Gradle version:"
+        ./gradlew --version
+        echo "🚀 Building..."
+        ./gradlew assembleDebug --stacktrace
+
+    # Bước 7: Upload APK
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Duix-Mobile-APK
+        path: '**/*.apk'
