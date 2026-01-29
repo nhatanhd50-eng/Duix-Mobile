@@ -17,8 +17,20 @@ jobs:
         java-version: '11'
         distribution: 'temurin'
 
-    # --- SỬA ĐÚNG ĐƯỜNG DẪN: duix-android/dh_aigc_android ---
-    
+    # --- BƯỚC MỚI: TẢI GRADLE VỀ ĐỂ TẠO FILE gradlew ---
+    - name: Download Gradle (to generate wrapper)
+      working-directory: ./
+      run: |
+        # Tải bản Gradle 8.0
+        wget https://services.gradle.org/distributions/gradle-8.0-bin.zip
+        unzip -q gradle-8.0-bin.zip
+
+    # --- TẠO FILE gradlew TRONG THƯ MỤC DỰ ÁN ---
+    - name: Generate Gradle Wrapper Scripts
+      working-directory: ./duix-android/dh_aigc_android
+      run: ../../gradle-8.0/bin/gradle wrapper --gradle-version 8.0
+      # Lệnh này sẽ tự tạo ra file 'gradlew' cho bạn
+
     - name: Grant execute permission for gradlew
       working-directory: ./duix-android/dh_aigc_android
       run: chmod +x gradlew
@@ -27,17 +39,13 @@ jobs:
       working-directory: ./duix-android/dh_aigc_android
       run: ./gradlew assembleDebug --stacktrace
 
-    # ------------------------------------------------------------------
-
+    # --- TÌM FILE APK ---
     - name: Find APK location
       id: find_apk
       run: |
-        # Tìm file .apk trong thư mục sâu đó
         find ./duix-android/dh_aigc_android -type f -name "*.apk" -size +1000k > apk_path.txt
-        
         echo "Tìm thấy các file APK:"
         cat apk_path.txt
-        
         echo "path=$(head -n 1 apk_path.txt)" >> $GITHUB_OUTPUT
 
     - name: Upload found APK
