@@ -1,4 +1,4 @@
-name: Build APK Update Gradle
+name: Build APK Clean Gradle
 
 on: 
   workflow_dispatch:
@@ -26,41 +26,17 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # Bước 4: Force cập nhật Gradle Wrapper lên 8.3
-    - name: Force Update to Gradle 8.3
+    # Bước 4: Setup Gradle chính thức và Tạo lại Gradlew
+    - name: Setup Gradle and Wrapper
       run: |
-        echo "Đang di chuyển vào thư mục dự án..."
         cd duix-android/dh_aigc_android
         
-        # 1. Tải đúng bản Gradle 8.3 (Bản này chạy ổn định với project cũ)
-        echo "Đang tải Gradle bản 8.3..."
-        wget https://services.gradle.org/distributions/gradle-8.3-bin.zip
+        # Xóa sạch file gradlew cũ (để tránh xung đột)
+        rm -f gradlew gradlew.bat
         
-        # 2. Giải nén
-        echo "Đang giải nén..."
-        unzip -q gradle-8.3-bin.zip
+        # Dùng Action chính thức của Gradle để cài đặt công cụ
+        # Lệnh này sẽ tự động tải bản Gradle cần thiết và tạo ra file gradlew chuẩn
+        gradle wrapper --gradle-version 8.3
         
-        # 3. Dùng bản này để tạo lại gradlew (ghi đè bản cũ)
-        echo "Đang tạo lại gradlew với bản 8.3..."
-        ./gradle-8.3/bin/gradle wrapper --gradle-version 8.3
-        
-        # 4. Dọn dẹp
-        rm gradle-8.3-bin.zip
-        rm -rf gradle-8.3/
-        
-        # 5. Cấp quyền
+        # Cấp quyền
         chmod +x gradlew
-        echo "Đã cập nhật xong gradlew lên bản 8.3!"
-
-    # Bước 5: Build (Lần này sẽ dùng Gradle 8.3)
-    - name: Build with Gradle
-      run: |
-        cd duix-android/dh_aigc_android
-        ./gradlew assembleDebug --stacktrace
-
-    # Bước 6: Upload APK
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: Duix-Mobile-Updated-APK
-        path: '**/*.apk'
