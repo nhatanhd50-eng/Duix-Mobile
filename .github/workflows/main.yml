@@ -11,13 +11,15 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # --- CHỈNH SỬA: THAY 11 THÀNH 17 ---
-    
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
+
+    # --- BƯỚC MỚI: CÀI ĐẶT CMAKE (Để biên dịch C++) ---
+    - name: Install CMake
+      run: sdkmanager "cmake;3.22.1"
 
     # ------------------------------------------
 
