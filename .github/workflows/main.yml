@@ -1,4 +1,4 @@
-name: Build APK Clean Gradle
+name: Build APK Final Manual Gradle
 
 on: 
   workflow_dispatch:
@@ -26,17 +26,46 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # Bước 4: Setup Gradle chính thức và Tạo lại Gradlew
-    - name: Setup Gradle and Wrapper
+    # Bước 4: Cài đặt thủ công Gradle 8.3 (Bắt buộc dùng bản này)
+    - name: Manual Install Gradle 8.3
       run: |
         cd duix-android/dh_aigc_android
         
-        # Xóa sạch file gradlew cũ (để tránh xung đột)
-        rm -f gradlew gradlew.bat
+        # 1. Xóa sạch file gradlew và thư mục gradle cũ để reset lại
+        echo "Dọn dẹp sạch sẽ..."
+        rm -rf gradlew gradlew.bat gradle/
         
-        # Dùng Action chính thức của Gradle để cài đặt công cụ
-        # Lệnh này sẽ tự động tải bản Gradle cần thiết và tạo ra file gradlew chuẩn
-        gradle wrapper --gradle-version 8.3
+        # 2. Tải đúng file cài đặt Gradle 8.3
+        echo "Đang tải bản Gradle 8.3 (BÁT BUỘC)..."
+        wget https://services.gradle.org/distributions/gradle-8.3-bin.zip
         
-        # Cấp quyền
+        # 3. Giải nén
+        echo "Đang giải nén..."
+        unzip -q gradle-8.3-bin.zip
+        
+        # 4. Dùng BẢN VỪA TẢI về để tạo lại gradlew wrapper
+        # Lệnh này sẽ tạo ra file gradlew gọi đến Gradle 8.3
+        echo "Đang tạo gradlew từ file tải về..."
+        ./gradle-8.3/bin/gradle wrapper --gradle-version 8.3
+        
+        # 5. Dọn dẹp thư mục cài đặt tạm
+        rm -rf gradle-8.3 gradle-8.3-bin.zip
+        
+        # 6. Cấp quyền
         chmod +x gradlew
+        echo "Đã xong!"
+
+    # Bước 5: Build
+    - name: Build with Gradle
+      run: |
+        cd duix-android/dh_aigc_android
+        # Hiển thị version để kiểm tra
+        ./gradlew --version
+        ./gradlew assembleDebug --stacktrace
+
+    # Bước 6: Upload APK
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Duix-Mobile-Manual-APK
+        path: '**/*.apk'
