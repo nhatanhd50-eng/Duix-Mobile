@@ -1,4 +1,4 @@
-name: Build APK From Release
+name: Build APK Final Fix
 
 on: 
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Bước 1: Tải source code v2.0.1
+    # Bước 1: Tải source code (v2.0.1)
     - name: Download Source Code Archive
       run: wget https://github.com/duixcom/Duix-Mobile/archive/refs/tags/v2.0.1.tar.gz
 
@@ -27,19 +27,33 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # Bước 5: Cấp quyền (Đã sửa đường dẫn chính xác: Duix-Mobile-2.0.1/duix-android/gradlew)
-    - name: Grant execute permission for gradlew
-      run: chmod +x Duix-Mobile-2.0.1/duix-android/gradlew
+    # Bước 5: Tìm file gradlew (Thay vì tìm build.gradle)
+    # Lệnh này sẽ tìm file chạy build gốc
+    - name: Find Gradlew location
+      id: find_gradlew
+      run: |
+        # Tìm file gradlew ở bất cứ đâu
+        GRADLEW_PATH=$(find . -name "gradlew" -type f | head -n 1)
+        echo "gradlew_path=$GRADLEW_PATH" >> $GITHUB_OUTPUT
+        if [ -z "$GRADLEW_PATH" ]; then
+          echo "Lỗi: Không tìm thấy file gradlew!"
+          exit 1
+        fi
+        echo "Tìm thấy gradlew tại: $GRADLEW_PATH"
 
-    # Bước 6: Build (Vào sâu vào thư mục duix-android rồi mới chạy)
+    # Bước 6: Cấp quyền và Build tại đúng chỗ gradlew đang nằm
     - name: Build with Gradle
       run: |
-        cd Duix-Mobile-2.0.1/duix-android
+        GRADLEW="${{ steps.find_gradlew.outputs.gradlew_path }}"
+        DIR=$(dirname "$GRADLEW")
+        echo "Đang build trong thư mục: $DIR"
+        cd $DIR
+        chmod +x gradlew
         ./gradlew assembleDebug --stacktrace
 
     # Bước 7: Upload APK
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Duix-Mobile-Release-APK
+        name: Duix-Mobile-Final-APK
         path: '**/*.apk'
