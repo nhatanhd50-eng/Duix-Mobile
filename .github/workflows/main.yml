@@ -17,12 +17,14 @@ jobs:
         java-version: '11'
         distribution: 'temurin'
 
-    # --- CHỈNH SỬA: CHẠY TRỰC TIẾP TẠI THƯ MỤC GỐC ---
+    # --- SỬA ĐÚNG ĐƯỜNG DẪN: duix-android/dh_aigc_android ---
     
     - name: Grant execute permission for gradlew
+      working-directory: ./duix-android/dh_aigc_android
       run: chmod +x gradlew
 
     - name: Build with Gradle
+      working-directory: ./duix-android/dh_aigc_android
       run: ./gradlew assembleDebug --stacktrace
 
     # ------------------------------------------------------------------
@@ -30,8 +32,8 @@ jobs:
     - name: Find APK location
       id: find_apk
       run: |
-        # Tìm file .apk từ thư mục gốc đi xuống
-        find . -type f -name "*.apk" -size +1000k > apk_path.txt
+        # Tìm file .apk trong thư mục sâu đó
+        find ./duix-android/dh_aigc_android -type f -name "*.apk" -size +1000k > apk_path.txt
         
         echo "Tìm thấy các file APK:"
         cat apk_path.txt
