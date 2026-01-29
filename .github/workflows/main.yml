@@ -1,4 +1,4 @@
-name: Build APK Auto Fix Gradlew
+name: Build APK Final
 
 on: 
   workflow_dispatch:
@@ -8,11 +8,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Bước 1: Clone code (Chắc chắn có gradle/wrapper)
+    # Bước 1: Clone code
     - name: Checkout Source Code
       uses: actions/checkout@v4
       with:
-        repository: duixcom/Duix-Mobile
+        repository: nhatanhd50-eng/Duix-Mobile # Dùng repo của bạn cho đúng với link
         ref: main
 
     # Bước 2: Cài đặt Java 17
@@ -22,54 +22,44 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # Bước 3: Setup Android SDK
+    # Bước 3: Cài đặt Android SDK
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # Bước 4: Tự sinh lại file gradlew bị thiếu
-    - name: Restore Missing Gradlew
-      run: |
-        echo "Đang tìm file cấu hình wrapper..."
-        # Tìm file gradle-wrapper.properties
-        WRAPPER_PROPS=$(find . -name "gradle-wrapper.properties" | head -n 1)
-        
-        if [ -z "$WRAPPER_PROPS" ]; then
-          echo "Không tìm thấy file gradle-wrapper.properties!"
-          exit 1
-        fi
+    # Bước 4: Cài đặt công cụ Gradle để tạo gradlew (Cái này quan trọng)
+    - name: Setup Gradle
+      uses: gradle/gradle-build-action@v3
 
-        # Lấy đường dẫn thư mục dự án (nhảy lên 2 cấp từ gradle/wrapper)
-        # VD: ./duix-android/dh_aigc_android/gradle/wrapper/gradle-wrapper.properties
-        # -> Cần ra đến: ./duix-android/dh_aigc_android
-        PROJECT_DIR=$(dirname $(dirname "$WRAPPER_PROPS"))
+    # Bước 5: Vào đúng thư mục, Tạo gradlew và Build
+    - name: Restore Gradlew and Build
+      run: |
+        echo "Đang di chuyển vào thư mục dự án..."
+        # Vào đúng thư mục bạn đang thấy gradle/wrapper
+        cd duix-android/dh_aigc_android
         
-        echo "Đang di chuyển đến dự án tại: $PROJECT_DIR"
-        cd "$PROJECT_DIR"
+        echo "Nội dung thư mục hiện tại:"
+        ls -la
         
-        echo "Đang sinh file gradlew bằng lệnh gradle wrapper..."
-        # Câu lệnh này sẽ tự tạo ra file gradlew dựa trên file .jar và .properties bạn thấy
-        gradle wrapper --gradle-version 7.5
-        
-        # Kiểm tra lại
+        # Kiểm tra xem có file gradlew chưa
         if [ ! -f "gradlew" ]; then
-          echo "Thất bại: Vẫn không thể tạo gradlew!"
-          exit 1
+          echo "Chưa có gradlew. Đang dùng lệnh gradle để tạo lại từ file .jar và .properties..."
+          # Lệnh này sẽ đọc file cấu hình trong gradle/wrapper để sinh ra gradlew
+          gradle wrapper
+          
+          echo "Đã tạo xong gradlew, đang cấp quyền..."
+          chmod +x gradlew
+        else
+          echo "Đã có file gradlew."
+          chmod +x gradlew
         fi
-        
-        chmod +x gradlew
-        echo "Đã tạo xong file gradlew!"
 
-    # Bước 5: Build
-    - name: Build with Gradle
-      run: |
-        # Tìm lại gradlew vừa tạo để chạy
-        GRADLEW=$(find . -name "gradlew" | head -n 1)
-        cd $(dirname "$GRADLEW")
+        # Bắt đầu Build
+        echo "Bắt đầu build APK..."
         ./gradlew assembleDebug --stacktrace
 
     # Bước 6: Upload APK
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Duix-Mobile-Fixed-APK
+        name: Duix-Mobile-My-Fork-APK
         path: '**/*.apk'
