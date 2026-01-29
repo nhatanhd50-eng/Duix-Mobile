@@ -1,4 +1,4 @@
-name: Build APK Final
+name: Build APK Fix Compatibility
 
 on: 
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
     - name: Checkout Source Code
       uses: actions/checkout@v4
       with:
-        repository: nhatanhd50-eng/Duix-Mobile # Dùng repo của bạn cho đúng với link
+        repository: nhatanhd50-eng/Duix-Mobile
         ref: main
 
     # Bước 2: Cài đặt Java 17
@@ -26,40 +26,53 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # Bước 4: Cài đặt công cụ Gradle để tạo gradlew (Cái này quan trọng)
-    - name: Setup Gradle
-      uses: gradle/gradle-build-action@v3
-
-    # Bước 5: Vào đúng thư mục, Tạo gradlew và Build
-    - name: Restore Gradlew and Build
+    # Bước 4: Tự động tải đúng version Gradle mà dự án yêu cầu
+    - name: Restore Gradlew Compatible
       run: |
         echo "Đang di chuyển vào thư mục dự án..."
-        # Vào đúng thư mục bạn đang thấy gradle/wrapper
         cd duix-android/dh_aigc_android
         
-        echo "Nội dung thư mục hiện tại:"
-        ls -la
+        # 1. Lấy version Gradle từ file cấu hình (gradle-wrapper.properties)
+        # File này nằm trong thư mục gradle/wrapper mà bạn thấy
+        GRADLE_VERSION=$(grep "distributionUrl" gradle/wrapper/gradle-wrapper.properties | sed -n 's/.*gradle-\(.*\)-bin.zip.*/\1/p')
         
-        # Kiểm tra xem có file gradlew chưa
-        if [ ! -f "gradlew" ]; then
-          echo "Chưa có gradlew. Đang dùng lệnh gradle để tạo lại từ file .jar và .properties..."
-          # Lệnh này sẽ đọc file cấu hình trong gradle/wrapper để sinh ra gradlew
-          gradle wrapper
-          
-          echo "Đã tạo xong gradlew, đang cấp quyền..."
-          chmod +x gradlew
+        if [ -z "$GRADLE_VERSION" ]; then
+          # Nếu không đọc được, mặc định dùng bản 7.5 (ổn định phổ biến)
+          echo "Không tìm thấy version, mặc định dùng 7.5"
+          GRADLE_VERSION="7.5"
         else
-          echo "Đã có file gradlew."
-          chmod +x gradlew
+          echo "Tìm thấy version cấu hình dự án: $GRADLE_VERSION"
         fi
+        
+        # 2. Tải bản Gradle đó về (bỏ qua bản 9.3 của hệ thống để tránh lỗi)
+        echo "Đang tải Gradle bản: $GRADLE_VERSION..."
+        wget https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip
+        
+        # 3. Giải nén
+        echo "Đang giải nén..."
+        unzip -q gradle-${GRADLE_VERSION}-bin.zip
+        
+        # 4. Dùng bản gradle vừa tải để tạo gradlew
+        echo "Đang tạo file gradlew bằng bản Gradle $GRADLE_VERSION..."
+        ./gradle-${GRADLE_VERSION}/bin/gradle wrapper
+        
+        # 5. Dọn dẹp
+        rm gradle-${GRADLE_VERSION}-bin.zip
+        rm -rf gradle-${GRADLE_VERSION}/
+        
+        # 6. Cấp quyền
+        chmod +x gradlew
+        echo "Đã tạo xong!"
 
-        # Bắt đầu Build
-        echo "Bắt đầu build APK..."
+    # Bước 5: Build
+    - name: Build with Gradle
+      run: |
+        cd duix-android/dh_aigc_android
         ./gradlew assembleDebug --stacktrace
 
     # Bước 6: Upload APK
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Duix-Mobile-My-Fork-APK
+        name: Duix-Mobile-Compatible-APK
         path: '**/*.apk'
