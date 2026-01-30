@@ -1,4 +1,4 @@
-name: Install CMake 3.18.1 & Build (Fixed)
+name: Fix Kotlin Crash (JDK 11) & Build
 
 on:
   push:
@@ -13,40 +13,37 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      # 1. DÙNG JDK 11 THAY VÌ 17 (Để tương thích với Kotlin cũ)
+      - name: Set up JDK 11
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '11'
           distribution: 'temurin'
 
-      # 1. CÀI ĐẶT CMAKE 3.18.1 (Bước quan trọng để sửa lỗi của bạn)
-      - name: Install CMake 3.18.1 & NDK
+      # 2. CÀI ĐẶT CMAKE 3.18.1 (Vẫn giữ bước này vì dự án cần)
+      - name: Install CMake 3.18.1
         run: |
           echo "Installing CMake 3.18.1..."
-          # Chấp nhận license và cài đặt cmake phiên bản cụ thể
-          echo "yes" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "cmake;3.18.1" --channel=0
-          
-          echo "Listing installed CMake versions:"
-          ls -l ${ANDROID_HOME}/cmake
+          echo "yes" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "cmake;3.18.1"
 
-      # 2. CÀI ĐẶT GRADLE 8.5
+      # 3. CÀI ĐẶT GRADLE 8.5
       - name: Setup Gradle Manually
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O gradle.zip
           unzip -q gradle.zip
           echo "$(pwd)/gradle-8.5/bin" >> $GITHUB_PATH
 
-      # 3. CHẠY BUILD & GHI LOG
+      # 4. CHẠY BUILD (Thêm tham số cấp thêm RAM -Xmx3072m)
       - name: Build Debug APK
         id: build_step
         run: |
           cd duix-android/dh_aigc_android
-          echo "🚀 Building... (Please wait)"
+          echo "🚀 Building with JDK 11 & More RAM..."
           
-          # Lưu log vào file build_log.txt
-          gradle assembleDebug --no-daemon --stacktrace --info > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
+          # Thêm -Dorg.gradle.jvmargs=-Xmx3072m để cấp 3GB RAM cho Gradle Daemon
+          gradle assembleDebug --no-daemon --stacktrace --info -Dorg.gradle.jvmargs=-Xmx3072m > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
 
-      # 4. HIỂN THỊ LỖI (Nếu vẫn còn lỗi khác)
+      # 5. HIỂN THỊ LỖI (Vẫn giữ in 200 dòng cuối để debug)
       - name: 🔴 SHOW REAL ERROR (Last 200 lines)
         if: env.BUILD_FAILED == 'true'
         run: |
@@ -58,7 +55,7 @@ jobs:
           echo "========================================================="
           exit 1
 
-      # 5. UPLOAD APK
+      # 6. UPLOAD APK
       - name: Upload APK
         if: env.BUILD_FAILED != 'true'
         uses: actions/upload-artifact@v4
