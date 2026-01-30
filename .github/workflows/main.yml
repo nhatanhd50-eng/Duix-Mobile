@@ -1,4 +1,4 @@
-name: Build APK with Gradle 9.0 & Logs (Fixed Path & Linux Script)
+name: Build APK with Gradle 9.0 & Logs (Fixed YAML)
 
 on:
   push:
@@ -13,50 +13,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Di chuyển vào đúng thư mục chứa project Android
-      - name: Change working directory
-        run: |
-          cd duix-android/dh_aigc_android
-          pwd
-          ls -la
+      - name: Change to Android project dir
+        run: cd duix-android/dh_aigc_android && pwd
 
-      # Tạo lại gradlew nếu thiếu (dành cho Linux)
       - name: Create gradlew if missing
         run: |
           cd duix-android/dh_aigc_android
-          if [ ! -f "gradlew" ]; then
+          if [ ! -f gradlew ]; then
             echo "Creating gradlew..."
             cat > gradlew << 'EOF'
 #!/bin/sh
-# Detect the operating system
-if [ "$(uname)" = "Darwin" ]; then
-    OS_NAME="osx"
-elif [ "$(expr substr $(uname -s) 1 5)" = "Linux" ]; then
-    OS_NAME="linux"
-else
-    echo "Unsupported OS"
-    exit 1
-fi
-
-# Execute gradle wrapper
 exec java -jar "gradle/wrapper/gradle-wrapper.jar" "$@"
 EOF
             chmod +x gradlew
           fi
 
-      # Cập nhật Gradle Wrapper lên 9.0
       - name: Update Gradle Wrapper to 9.0
         run: |
           cd duix-android/dh_aigc_android
           ./gradlew wrapper --gradle-version 9.0 --distribution-type bin
 
-      - name: Check gradlew exists
+      - name: Check gradlew
         run: |
           cd duix-android/dh_aigc_android
-          ls -la gradlew
+          ls -l gradlew
           ./gradlew --version
 
-      # Build APK với log full
       - name: Build Debug APK
         id: build_debug
         run: |
@@ -64,8 +46,7 @@ EOF
           ./gradlew assembleDebug --no-daemon --stacktrace --info > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
         continue-on-error: true
 
-      # In toàn bộ log lỗi (nếu có) ra terminal để bạn dễ copy
-      - name: Print Full Build Log (Copy All Below)
+      - name: Print Full Build Log (if failed)
         if: env.BUILD_FAILED == 'true'
         run: |
           cd duix-android/dh_aigc_android
@@ -73,10 +54,7 @@ EOF
           echo "====================================="
           cat build_log.txt
           echo "====================================="
-          echo "📋 END OF LOG"
-        shell: bash
 
-      # Upload log lỗi nếu build fail
       - name: Upload Build Log (on failure)
         if: env.BUILD_FAILED == 'true'
         uses: actions/upload-artifact@v4
@@ -84,17 +62,9 @@ EOF
           name: build-failure-log
           path: duix-android/dh_aigc_android/build_log.txt
 
-      # Upload APK nếu build success
       - name: Upload Debug APK
         if: env.BUILD_FAILED != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: debug-apk
           path: duix-android/dh_aigc_android/app/build/outputs/apk/debug/app-debug.apk
-
-      # Upload toàn bộ log dù có lỗi hay không
-      - name: Upload Full Build Log (Always)
-        uses: actions/upload-artifact@v4
-        with:
-          name: full-build-log
-          path: duix-android/dh_aigc_android/build_log.txt
