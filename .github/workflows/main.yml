@@ -1,4 +1,4 @@
-name: Build APK Final CMake Fix
+name: Build APK Debug Mode
 
 on: 
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # Bước 4: Cài thủ công CMake 3.18.1
+    # Bước 4: Cài CMake 3.18.1
     - name: Install CMake 3.18.1
       run: |
         wget -q https://github.com/Kitware/CMake/releases/download/v3.18.1/cmake-3.18.1-Linux-x86_64.tar.gz
@@ -35,8 +35,19 @@ jobs:
         cp -r cmake-3.18.1-Linux-x86_64/* $ANDROID_HOME/cmake/3.18.1/
         echo "✅ CMake 3.18.1 installed"
 
-    # Bước 5: Setup Gradlew với Gradle 8.3 (ỔN ĐỊNH)
-    - name: Restore Gradlew Manually (Gradle 8.3)
+    # Bước 5: Cài NDK (CÓ THỂ ĐANG THIẾU!)
+    - name: Install NDK
+      run: |
+        echo "📦 Cài đặt NDK..."
+        sdkmanager --install "ndk;21.4.7075529"
+        sdkmanager --install "ndk;23.1.7779620"
+        sdkmanager --install "ndk;25.2.9519653"
+        
+        echo "✅ Các NDK đã cài:"
+        ls -la $ANDROID_HOME/ndk/
+
+    # Bước 6: Setup Gradlew
+    - name: Restore Gradlew Manually
       run: |
         cd duix-android/dh_aigc_android
         rm -rf gradlew gradlew.bat gradle/
@@ -55,18 +66,51 @@ jobs:
         EOF
         
         chmod +x gradlew
-        echo "✅ Gradle 8.3 ready"
 
-    # Bước 6: Build
-    - name: Build with Gradle
+    # Bước 7: Kiểm tra cấu hình NDK trong project
+    - name: Check NDK Config
+      run: |
+        cd duix-android/dh_aigc_android
+        echo "📋 Kiểm tra build.gradle của duix-sdk:"
+        cat duix-sdk/build.gradle | grep -i ndk || echo "Không tìm thấy cấu hình NDK"
+        
+        echo ""
+        echo "📋 Kiểm tra local.properties:"
+        cat local.properties 2>/dev/null || echo "Không có local.properties"
+
+    # Bước 8: Tạo local.properties với NDK path
+    - name: Create local.properties
+      run: |
+        cd duix-android/dh_aigc_android
+        echo "sdk.dir=$ANDROID_HOME" > local.properties
+        echo "ndk.dir=$ANDROID_HOME/ndk/25.2.9519653" >> local.properties
+        echo "cmake.dir=$ANDROID_HOME/cmake/3.18.1" >> local.properties
+        
+        echo "✅ local.properties:"
+        cat local.properties
+
+    # Bước 9: Build với INFO log
+    - name: Build with Gradle (INFO mode)
       run: |
         cd duix-android/dh_aigc_android
         ./gradlew --version
-        ./gradlew assembleDebug --stacktrace
+        
+        # Build với --info để xem chi tiết lỗi
+        ./gradlew assembleDebug --info --stacktrace 2>&1 | tee build.log
+      env:
+        GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
 
-    # Bước 7: Upload APK
+    # Bước 10: Upload log nếu fail
+    - name: Upload Build Log
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: duix-android/dh_aigc_android/build.log
+
+    # Bước 11: Upload APK
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Duix-Mobile-Complete-APK
+        name: Duix-Mobile-APK
         path: '**/*.apk'
