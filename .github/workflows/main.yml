@@ -1,4 +1,4 @@
-name: Build APK Find Error
+name: Build APK With Error Log
 
 on: 
   workflow_dispatch:
@@ -59,65 +59,114 @@ jobs:
         cmake.dir=$ANDROID_HOME/cmake/3.18.1
         EOF
 
-    # TÌM LỖI BẰNG CÁCH LỌC LOG
-    - name: "🔍 BUILD VÀ TÌM LỖI"
+    # BUILD - LƯU LOG VÀO FILE
+    - name: "🚀 Build APK"
+      id: build_apk
       run: |
         cd duix-android/dh_aigc_android
-        set +e
         
-        echo "🚀 Bắt đầu build với filter lỗi..."
-        ./gradlew assembleDebug --stacktrace 2>&1 | tee full_build.log
+        # Build và lưu TOÀN BỘ log vào file
+        ./gradlew assembleDebug --stacktrace --debug > build_full.log 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
         
-        BUILD_EXIT_CODE=${PIPESTATUS[0]}
-        
-        echo ""
-        echo "========================================="
-        echo "📊 KẾT QUẢ BUILD: Exit Code = $BUILD_EXIT_CODE"
-        echo "========================================="
-        
-        if [ $BUILD_EXIT_CODE -ne 0 ]; then
-          echo ""
-          echo "========================================="
-          echo "🔴 CÁC DÒNG CÓ 'FAILED':"
-          echo "========================================="
-          grep -i "FAILED" full_build.log || echo "Không tìm thấy"
-          
-          echo ""
-          echo "========================================="
-          echo "🔴 CÁC DÒNG CÓ 'ERROR':"
-          echo "========================================="
-          grep -i "ERROR" full_build.log | head -20 || echo "Không tìm thấy"
-          
-          echo ""
-          echo "========================================="
-          echo "🔴 CÁC DÒNG CÓ 'Exception':"
-          echo "========================================="
-          grep -i "Exception" full_build.log | head -20 || echo "Không tìm thấy"
-          
-          echo ""
-          echo "========================================="
-          echo "🔴 500 DÒNG TRƯỚC 'BUILD FAILED':"
-          echo "========================================="
-          # Tìm vị trí BUILD FAILED và lấy 500 dòng trước đó
-          grep -B 500 "BUILD FAILED" full_build.log | tail -200 || tail -500 full_build.log
-        fi
-        
-        exit $BUILD_EXIT_CODE
+        # Lưu exit code
+        echo "BUILD_EXIT_CODE=$?" >> $GITHUB_ENV
+      continue-on-error: true
 
-    # BUILD LẠI VỚI WARNING MODE
-    - name: "🔍 CHẠY LẠI VỚI WARNING MODE"
+    # IN LOG LỖI - STEP RIÊNG
+    - name: "🔴 IN LOG LỖI"
+      if: always()
+      run: |
+        cd duix-android/dh_aigc_android
+        
+        echo "========================================="
+        echo "📊 PHÂN TÍCH KẾT QUẢ BUILD"
+        echo "========================================="
+        
+        if [ -f build_full.log ]; then
+          # Kiểm tra build status
+          if grep -q "BUILD SUCCESSFUL" build_full.log; then
+            echo "✅ BUILD THÀNH CÔNG!"
+            echo ""
+            echo "📦 Tìm APK..."
+            find . -name "*.apk" -type f -exec ls -lh {} \;
+          else
+            echo "❌ BUILD THẤT BẠI!"
+            echo ""
+            echo "========================================="
+            echo "🔍 TÌM TASK FAILED:"
+            echo "========================================="
+            grep "> Task.*FAILED" build_full.log || echo "Không tìm thấy task failed"
+            
+            echo ""
+            echo "========================================="
+            echo "🔍 TÌM ERROR:"
+            echo "========================================="
+            grep -i "error:" build_full.log | head -20 || echo "Không tìm thấy error"
+            
+            echo ""
+            echo "========================================="
+            echo "🔍 TÌM EXCEPTION:"
+            echo "========================================="
+            grep -A5 "Exception" build_full.log | head -50 || echo "Không tìm thấy exception"
+            
+            echo ""
+            echo "========================================="
+            echo "🔍 TÌM NGUYÊN NHÂN (What went wrong):"
+            echo "========================================="
+            grep -A10 "What went wrong:" build_full.log || echo "Không tìm thấy"
+            
+            echo ""
+            echo "========================================="
+            echo "📜 200 DÒNG CUỐI CỦA LOG:"
+            echo "========================================="
+            tail -n 200 build_full.log
+          fi
+        else
+          echo "❌ Không tìm thấy file log!"
+        fi
+
+    # STEP RIÊNG CHO TỪNG LOẠI LỖI
+    - name: "📋 Tìm Lỗi Compilation"
+      if: failure() 
+      run: |
+        cd duix-android/dh_aigc_android
+        if [ -f build_full.log ]; then
+          echo "🔍 Lỗi Compilation:"
+          grep -B5 -A5 "compilation failed\|cannot find symbol\|unresolved reference" build_full.log | head -100 || echo "Không có lỗi compilation"
+        fi
+
+    - name: "📋 Tìm Lỗi Resources"  
       if: failure()
       run: |
         cd duix-android/dh_aigc_android
-        echo "========================================="
-        echo "📋 CHẠY VỚI --warning-mode all"
-        echo "========================================="
-        ./gradlew assembleDebug --warning-mode all 2>&1 | grep -A5 -B5 -i "deprecated\|warning\|error" | head -100 || true
+        if [ -f build_full.log ]; then
+          echo "🔍 Lỗi Resources:"
+          grep -B5 -A5 "AAPT\|resource.*not found\|No resource found" build_full.log | head -100 || echo "Không có lỗi resources"
+        fi
 
-    - name: Upload Full Log
+    - name: "📋 Tìm Lỗi CMake/NDK"
+      if: failure()
+      run: |
+        cd duix-android/dh_aigc_android
+        if [ -f build_full.log ]; then
+          echo "🔍 Lỗi CMake/NDK:"
+          grep -B5 -A5 "CMake\|NDK\|ninja\|C++\|undefined reference" build_full.log | head -100 || echo "Không có lỗi CMake/NDK"
+        fi
+
+    # UPLOAD LOG ĐẦY ĐỦ
+    - name: "📤 Upload Full Log"
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: full-build-log
-        path: duix-android/dh_aigc_android/full_build.log
+        name: complete-build-log
+        path: duix-android/dh_aigc_android/build_full.log
+        if-no-files-found: ignore
+
+    # UPLOAD APK NẾU CÓ
+    - name: "📤 Upload APK"
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: apk-debug
+        path: duix-android/dh_aigc_android/app/build/outputs/apk/debug/*.apk
         if-no-files-found: ignore
