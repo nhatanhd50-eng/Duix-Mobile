@@ -1,8 +1,8 @@
-name: Build APK
+name: Build APK with Gradle 9.0 & Logs
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   pull_request:
     branches: [ "main" ]
 
@@ -22,25 +22,60 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # Nếu không có gradlew, tự động tạo
-    - name: Generate Gradle Wrapper
+    # Tạo gradlew nếu chưa có, và đảm bảo dùng Gradle 9.0
+    - name: Generate Gradle Wrapper for 9.0
       run: |
         if [ ! -f gradlew ]; then
-          echo "gradlew not found, generating..."
-          # Tải Gradle 8.7 và tạo wrapper
-          wget https://services.gradle.org/distributions/gradle-8.7-bin.zip
-          unzip gradle-8.7-bin.zip
-          export GRADLE_HOME=$(pwd)/gradle-8.7
-          export PATH=$PATH:$GRADLE_HOME/bin
-          gradle wrapper --gradle-version 8.7
+          echo "gradlew not found, generating with Gradle 9.0..."
+          gradle wrapper --gradle-version 9.0
+        else
+          echo "gradlew already exists, updating wrapper to 9.0..."
+          ./gradlew wrapper --gradle-version 9.0
         fi
         chmod +x gradlew
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug --no-daemon
+    - name: Check gradlew exists
+      run: |
+        ls -la gradlew
+        ./gradlew --version
 
-    - name: Upload Debug APK
+    # Build APK với log full
+    - name: Build Debug APK
+      id: build_debug
+      run: |
+        ./gradlew assembleDebug --no-daemon --stacktrace --info > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
+      continue-on-error: true
+
+    # In toàn bộ log lỗi (nếu có) ra terminal để bạn dễ copy
+    - name: 🔍 Print Full Build Log (Copy All Below)
+      if: env.BUILD_FAILED == 'true'
+      run: |
+        echo "📋 FULL BUILD LOG (COPY ALL BELOW):"
+        echo "====================================="
+        cat build_log.txt
+        echo "====================================="
+        echo "📋 END OF LOG"
+      shell: bash
+
+    # Upload log lỗi nếu build fail
+    - name: 📤 Upload Build Log (on failure)
+      if: env.BUILD_FAILED == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-failure-log
+        path: build_log.txt
+
+    # Upload APK nếu build success
+    - name: 📦 Upload Debug APK
+      if: env.BUILD_FAILED != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: debug-apk
         path: app/build/outputs/apk/debug/app-debug.apk
+
+    # Upload toàn bộ log dù có lỗi hay không
+    - name: 📤 Upload Full Build Log (Always)
+      uses: actions/upload-artifact@v4
+      with:
+        name: full-build-log
+        path: build_log.txt
