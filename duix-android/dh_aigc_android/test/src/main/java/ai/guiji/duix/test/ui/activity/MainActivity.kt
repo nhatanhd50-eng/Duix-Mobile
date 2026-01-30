@@ -12,7 +12,6 @@ import ai.guiji.duix.test.databinding.ActivityMainBinding
 import ai.guiji.duix.test.ui.dialog.LoadingDialog
 import ai.guiji.duix.test.ui.dialog.ModelSelectorDialog
 import java.io.File
-// ĐÃ XÓA TOÀN BỘ IMPORT KOTLINX.COROUTINES ĐỂ KHẮC PHỤC LỖI
 
 class MainActivity : BaseActivity() {
 
@@ -36,15 +35,17 @@ class MainActivity : BaseActivity() {
 
         binding.tvSdkVersion.text = "SDK Version: ${BuildConfig.VERSION_NAME}"
 
-        // SỬA LỖI LAMBDA: Khai báo Listener rõ ràng
+        // --- SỬA LỖI Ở ĐÂY ---
+        // Đổi tên hàm từ override fun onFinish -> override fun onSelect
         binding.btnMoreModel.setOnClickListener {
             val modelSelectorDialog = ModelSelectorDialog(mContext, models, object : ModelSelectorDialog.Listener {
-                override fun onFinish(url: String) {
+                override fun onSelect(url: String) { // <--- ĐÃ SỬA TÊN HÀM
                     binding.etUrl.setText(url.trim())
                 }
             })
             modelSelectorDialog.show()
         }
+        // ---------------------
 
         binding.btnPlay.setOnClickListener {
             play()
