@@ -1,4 +1,4 @@
-name: Build APK Auto Fix
+name: Build APK Find New Error
 
 on: 
   workflow_dispatch:
@@ -59,35 +59,91 @@ jobs:
         cmake.dir=$ANDROID_HOME/cmake/3.18.1
         EOF
 
-    # TỰ ĐỘNG SỬA LỖI
-    - name: "🔧 AUTO FIX: Remove duplicate import"
+    # SỬA LỖI CŨ
+    - name: "🔧 Fix duplicate import"
       run: |
         FILE="duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt"
-        
-        echo "📋 File cần sửa: $FILE"
-        
-        # Cách 1: Xóa dòng 29 (import thứ 2)
         sed -i '29d' "$FILE"
-        
-        # Hoặc Cách 2: Xóa dòng có "import android.widget.CompoundButton" thứ 2
-        # awk '!/import android.widget.CompoundButton/ || !f++' "$FILE" > temp && mv temp "$FILE"
-        
-        echo "✅ Đã xóa import trùng lặp!"
-        
-        # Hiển thị dòng 20-35 để kiểm tra
-        echo "📝 Kiểm tra import (dòng 20-35):"
-        sed -n '20,35p' "$FILE"
+        echo "✅ Fixed import"
 
-    # BUILD
-    - name: "🚀 Build APK"
+    # BUILD VÀ LƯU LOG CHI TIẾT
+    - name: "🚀 Build with Full Log"
       run: |
         cd duix-android/dh_aigc_android
-        ./gradlew assembleDebug --stacktrace
+        
+        # Build và lưu toàn bộ output
+        ./gradlew assembleDebug --stacktrace --info 2>&1 | tee build_output.log || true
+        
+        echo ""
+        echo "========================================="
+        echo "🔴 TÌM LỖI MỚI:"
+        echo "========================================="
+        
+        # Tìm task failed
+        echo "📌 TASK FAILED:"
+        grep "> Task.*FAILED" build_output.log | head -10 || echo "Không tìm thấy"
+        
+        echo ""
+        echo "📌 ERROR LINES:"
+        grep -i "error:" build_output.log | grep -v "BuildExceptionReporter" | head -20 || echo "Không tìm thấy"
+        
+        echo ""
+        echo "📌 KOTLIN ERRORS:"
+        grep "e: " build_output.log | head -30 || echo "Không tìm thấy"
+        
+        echo ""
+        echo "📌 CANNOT FIND/RESOLVE:"
+        grep -i "cannot find\|cannot resolve\|unresolved" build_output.log | head -20 || echo "Không tìm thấy"
 
-    - name: "📦 Upload APK"
+    # UPLOAD LOG ĐẦY ĐỦ
+    - name: Upload Full Log
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug-apk
-        path: duix-android/dh_aigc_android/app/build/outputs/apk/debug/*.apk
-        if-no-files-found: warn
+        name: build-output-log
+        path: duix-android/dh_aigc_android/build_output.log
+        if-no-files-found: ignore
+
+    # THỬ BUILD TỪNG MODULE
+    - name: "🧪 Test Build Each Module"
+      if: failure()
+      run: |
+        cd duix-android/dh_aigc_android
+        
+        echo "========================================="
+        echo "🧪 TEST BUILD TỪNG MODULE:"
+        echo "========================================="
+        
+        echo "1️⃣ Build :app"
+        ./gradlew :app:assembleDebug --stacktrace 2>&1 | tail -50 || true
+        
+        echo ""
+        echo "2️⃣ Build :duix-sdk"  
+        ./gradlew :duix-sdk:assembleDebug --stacktrace 2>&1 | tail -50 || true
+        
+        echo ""
+        echo "3️⃣ Build :test (module có lỗi)"
+        ./gradlew :test:assembleDebug --stacktrace 2>&1 | tail -50 || true
+
+    # KIỂM TRA CÁC FILE KHÁC CÓ LỖI
+    - name: "🔍 Check Other Files"
+      if: always()
+      run: |
+        cd duix-android/dh_aigc_android
+        
+        echo "========================================="
+        echo "🔍 KIỂM TRA FILE KOTLIN KHÁC:"
+        echo "========================================="
+        
+        # Tìm tất cả file .kt trong module test
+        find test -name "*.kt" -type f | while read file; do
+          # Kiểm tra import trùng
+          if grep -c "^import.*CompoundButton" "$file" 2>/dev/null | grep -q "2"; then
+            echo "❌ $file - Có import CompoundButton trùng"
+          fi
+          
+          # Kiểm tra các import có vấn đề khác
+          if grep -E "^import.*\s+import\s+" "$file" 2>/dev/null; then
+            echo "❌ $file - Có vấn đề với import"
+          fi
+        done
