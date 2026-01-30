@@ -1,4 +1,4 @@
-name: Fix Kotlin Files & Build APK
+name: Build APK - Find and Upload
 
 on: 
   workflow_dispatch:
@@ -31,6 +31,24 @@ jobs:
         cp -r cmake-3.18.1-Linux-x86_64/* $ANDROID_HOME/cmake/3.18.1/
         sdkmanager "ndk;25.2.9519653"
 
+    # FIX CODE
+    - name: "🔧 Fix Kotlin Files"
+      run: |
+        # 1. Fix CallActivity.kt
+        CALL_ACTIVITY="duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt"
+        sed -i '29d' "$CALL_ACTIVITY" 2>/dev/null || true
+        sed -i 's/\.backgroundColor = /.setBackgroundColor(/g' "$CALL_ACTIVITY" 2>/dev/null || true
+        sed -i 's/etChat!!\.backgroundColor/etChat!!.setBackgroundColor/g' "$CALL_ACTIVITY" 2>/dev/null || true
+        sed -i 's/private fun setupChatUI/protected override fun setupChatUI/g' "$CALL_ACTIVITY" 2>/dev/null || true
+        sed -i 's/private fun addChatMessage/protected override fun addChatMessage/g' "$CALL_ACTIVITY" 2>/dev/null || true
+        sed -i 's/var length = 0/var length: Int/g' "$CALL_ACTIVITY" 2>/dev/null || true
+
+        # 2. Fix MainActivity.kt
+        MAIN_ACTIVITY="duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/MainActivity.kt"
+        sed -i 's/\.backgroundColor = /.setBackgroundColor(/g' "$MAIN_ACTIVITY" 2>/dev/null || true
+        sed -i 's/private fun setupChatUI/protected override fun setupChatUI/g' "$MAIN_ACTIVITY" 2>/dev/null || true
+        sed -i 's/private fun addChatMessage/protected override fun addChatMessage/g' "$MAIN_ACTIVITY" 2>/dev/null || true
+
     - name: Create local.properties
       run: |
         cd duix-android/dh_aigc_android
@@ -40,143 +58,6 @@ jobs:
         cmake.dir=$ANDROID_HOME/cmake/3.18.1
         EOF
 
-    # ===== BƯỚC SỬA TỰ ĐỘNG CÁC FILE =====
-    - name: "🔧 Fix CallActivity.kt"
-      run: |
-        CALL_ACTIVITY="duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt"
-        
-        echo "🔍 Đang sửa CallActivity.kt..."
-        
-        # 1. Xóa dòng import trùng lặp
-        sed -i '29d' "$CALL_ACTIVITY" || echo "Không xóa được import trùng"
-        
-        # 2. Tạo file tạm để dễ sửa bằng awk
-        awk '{
-          # Sửa lỗi backgroundColor -> setBackgroundColor
-          gsub(/\.backgroundColor = /, ".setBackgroundColor(")
-          gsub(/etChat!!\.backgroundColor/, "etChat!!.setBackgroundColor")
-          
-          # Sửa định nghĩa setupChatUI
-          gsub(/private fun setupChatUI/, "protected override fun setupChatUI")
-          
-          # Sửa định nghĩa addChatMessage
-          gsub(/private fun addChatMessage/, "protected override fun addChatMessage")
-          
-          # Sửa lambda cho switchMute
-          if ($0 ~ /binding.switchMute.setOnCheckedChangeListener/) {
-            print "        binding.switchMute.setOnCheckedChangeListener { _, isChecked ->\n"
-            getline; getline; getline; getline
-            print "            if (isChecked) {\n                duix?.setVolume(0.0F)\n            } else {\n                duix?.setVolume(1.0F)\n            }\n        }"
-            next
-          }
-          
-          # Fix var length = 0
-          gsub(/var length = 0/, "var length: Int")
-          
-          print
-        }' "$CALL_ACTIVITY" > temp_file && mv temp_file "$CALL_ACTIVITY"
-        
-        # 3. Thêm callback cho duix.setResponseCallback
-        sed -i '/duix = DUIX/,/duix?.init()/ s/applyMessage("start init")/applyMessage("start init")\n\n        \/\/ Đăng ký callback nhận response\n        duix?.setResponseCallback(object : DUIX.ResponseCallback {\n            override fun onResponseReceived(response: String) {\n                runOnUiThread {\n                    \/\/ Hiển thị phản hồi trong khung chat\n                    addChatMessage(response, false)\n                }\n            }\n        })/' "$CALL_ACTIVITY"
-        
-        echo "✅ Đã sửa xong CallActivity.kt"
-
-    - name: "🔧 Fix MainActivity.kt"
-      run: |
-        MAIN_ACTIVITY="duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/MainActivity.kt"
-        
-        echo "🔍 Đang sửa MainActivity.kt..."
-        
-        # Sửa các lỗi tương tự
-        awk '{
-          # Sửa lỗi backgroundColor -> setBackgroundColor
-          gsub(/\.backgroundColor = /, ".setBackgroundColor(")
-          
-          # Sửa định nghĩa setupChatUI
-          gsub(/private fun setupChatUI/, "protected override fun setupChatUI")
-          
-          # Sửa định nghĩa addChatMessage
-          gsub(/private fun addChatMessage/, "protected override fun addChatMessage")
-          
-          print
-        }' "$MAIN_ACTIVITY" > temp_file && mv temp_file "$MAIN_ACTIVITY"
-        
-        echo "✅ Đã sửa xong MainActivity.kt"
-        
-    - name: "🔧 Thêm ResponseCallback vào DUIX.java"
-      run: |
-        DUIX_JAVA="duix-android/dh_aigc_android/duix-sdk/src/main/java/ai/guiji/duix/sdk/client/DUIX.java"
-        
-        if [ -f "$DUIX_JAVA" ]; then
-          echo "🔍 Đang tìm DUIX.java tại: $DUIX_JAVA"
-          
-          # Kiểm tra xem đã có ResponseCallback chưa
-          if ! grep -q "interface ResponseCallback" "$DUIX_JAVA"; then
-            echo "🔧 Thêm ResponseCallback interface..."
-            
-            # Thêm interface và biến
-            awk '/public class DUIX/ {
-              print
-              print "    // Callback để trả về phản hồi từ AI"
-              print "    public interface ResponseCallback {"
-              print "        void onResponseReceived(String response);"
-              print "    }"
-              print ""
-              print "    private ResponseCallback mResponseCallback;"
-              print ""
-              print "    public void setResponseCallback(ResponseCallback callback) {"
-              print "        this.mResponseCallback = callback;"
-              print "    }"
-              next
-            }
-            /public void askAndSpeak/ {
-              in_method = 1
-              print
-              next
-            }
-            in_method == 1 && /onSuccess/ {
-              print
-              print "            // Thông báo response về cho UI"
-              print "            if (mResponseCallback != null) {"
-              print "                mResponseCallback.onResponseReceived(content);"
-              print "            }"
-              next
-            }
-            in_method == 1 && /onError/ {
-              in_error = 1
-              print
-              next
-            }
-            in_error == 1 && /Log\.e/ {
-              print
-              print "            if (mResponseCallback != null) {"
-              print "                mResponseCallback.onResponseReceived(\"Xin lỗi, tôi gặp lỗi khi xử lý: \" + error);"
-              print "            }"
-              in_error = 0
-              next
-            }
-            {print}' "$DUIX_JAVA" > temp_file && mv temp_file "$DUIX_JAVA"
-            
-            echo "✅ Đã thêm ResponseCallback vào DUIX.java"
-          else
-            echo "✓ DUIX.java đã có ResponseCallback"
-          fi
-        else
-          echo "❌ Không tìm thấy DUIX.java tại đường dẫn mặc định"
-          
-          # Tìm file DUIX.java
-          echo "🔍 Tìm file DUIX.java trong dự án..."
-          FOUND_DUIX=$(find . -name "DUIX.java")
-          
-          if [ ! -z "$FOUND_DUIX" ]; then
-            echo "✅ Đã tìm thấy DUIX.java tại: $FOUND_DUIX"
-            # Thực hiện các sửa đổi tương tự ở trên
-          else
-            echo "❌ Không tìm thấy DUIX.java trong dự án"
-          fi
-        fi
-
-    # ===== SETUP GRADLE & BUILD =====
     - name: Setup Gradlew
       run: |
         cd duix-android/dh_aigc_android
@@ -194,77 +75,108 @@ jobs:
         EOF
         chmod +x gradlew
 
-    # ===== BUILD WITH DETAILED LOGGING =====
-    - name: "🚀 Build APK (Lưu Log)"
-      id: build
+    # ===== CHECK PROJECT STRUCTURE =====
+    - name: "📋 Kiểm Tra Cấu Trúc Project"
       run: |
         cd duix-android/dh_aigc_android
-        # Build và lưu toàn bộ output
-        ./gradlew assembleDebug --info > build_output.log 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
+        echo "========================================="
+        echo "📋 MODULE NÀO TẠO APK?"
+        echo "========================================="
         
-        # Lưu exit code để biết build thành công hay thất bại
-        echo "BUILD_EXIT_CODE=$?" >> $GITHUB_ENV
+        echo "📝 settings.gradle:"
+        cat settings.gradle || cat settings.gradle.kts || echo "Không tìm thấy"
+        
+        echo ""
+        echo "📝 Xem module app có tạo application không:"
+        grep -E "apply plugin: 'com.android.application'|plugins \{.*application.*\}" app/build.gradle || echo "Không phải application"
+        
+        echo ""
+        echo "📝 Xem module test có tạo application không:"
+        grep -E "apply plugin: 'com.android.application'|plugins \{.*application.*\}" test/build.gradle || echo "Không phải application"
 
-    # ===== STEP MỚI: OUTPUT CHI TIẾT LỖI =====
-    - name: "🔴 HIỂN THỊ LỖI CHI TIẾT"
+    # ===== BUILD ALL MODULES =====
+    - name: "🚀 Build Tất Cả Modules"
+      run: |
+        cd duix-android/dh_aigc_android
+        ./gradlew build --stacktrace
+
+    # ===== TÌM KIẾM APK Ở NHIỀU NƠI =====
+    - name: "🔍 Tìm APK Ở MỌI NƠI"
       if: always()
       run: |
-        cd duix-android/dh_aigc_android
         echo "========================================="
-        echo "📊 KẾT QUẢ BUILD"
+        echo "🔍 TÌM TẤT CẢ FILE APK TRONG WORKSPACE:"
         echo "========================================="
-        
-        if [ "$BUILD_EXIT_CODE" == "0" ]; then
-          echo "✅ BUILD THÀNH CÔNG!"
-        else
-          echo "❌ BUILD THẤT BẠI! (Exit code: $BUILD_EXIT_CODE)"
-          
-          echo ""
-          echo "========================================="
-          echo "🔴 TASK THẤT BẠI:"
-          echo "========================================="
-          grep "> Task.*FAILED" build_output.log || echo "Không tìm thấy task failed"
-          
-          echo ""
-          echo "========================================="
-          echo "🔴 LỖI KOTLIN:"
-          echo "========================================="
-          grep "e: " build_output.log | grep -v "note: " | head -20 || echo "Không tìm thấy lỗi Kotlin"
-          
-          echo ""
-          echo "========================================="
-          echo "🔴 LỖI KHÁC:"
-          echo "========================================="
-          grep -E "Error:|Exception:|FAILED" build_output.log | grep -v "at " | head -20 || echo "Không tìm thấy lỗi khác"
-          
-          echo ""
-          echo "========================================="
-          echo "🔴 NGUYÊN NHÂN LỖI:"
-          echo "========================================="
-          grep -A10 "What went wrong:" build_output.log || echo "Không tìm thấy phần What went wrong"
-          
-          echo ""
-          echo "========================================="
-          echo "🔴 NHỮNG DÒNG CUỐI CÙNG CỦA LOG:"
-          echo "========================================="
-          tail -n 30 build_output.log
-        fi
-
-    # ===== CHECK KOTLIN FILES =====
-    - name: "📝 Kiểm Tra Các File Kotlin Đã Sửa"
-      run: |
-        echo "========================================="
-        echo "📝 KIỂM TRA CALLACTIVITY.KT"
-        echo "========================================="
-        grep -n "private fun setupChatUI\|protected override fun setupChatUI\|private fun addChatMessage\|protected override fun addChatMessage\|backgroundColor\|setBackgroundColor" duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt || echo "Không tìm thấy mẫu cần kiểm tra"
+        find . -name "*.apk" -type f -exec ls -lh {} \; || echo "❌ Không tìm thấy file APK nào"
         
         echo ""
         echo "========================================="
-        echo "📝 KIỂM TRA MAINACTIVITY.KT"
+        echo "📁 Xem outputs Của Module app:"
         echo "========================================="
-        grep -n "private fun setupChatUI\|protected override fun setupChatUI\|private fun addChatMessage\|protected override fun addChatMessage\|backgroundColor\|setBackgroundColor" duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/MainActivity.kt || echo "Không tìm thấy mẫu cần kiểm tra"
+        ls -la duix-android/dh_aigc_android/app/build/outputs/ 2>/dev/null || echo "Không có thư mục outputs"
+        
+        echo ""
+        echo "========================================="
+        echo "📁 Xem outputs Của Module test:"
+        echo "========================================="
+        ls -la duix-android/dh_aigc_android/test/build/outputs/ 2>/dev/null || echo "Không có thư mục outputs"
+        
+        echo ""
+        echo "========================================="
+        echo "📁 Tìm Tất Cả Thư Mục outputs:"
+        echo "========================================="
+        find . -name "outputs" -type d -exec ls -la {} \; 2>/dev/null || echo "Không có thư mục outputs"
+        
+        echo ""
+        echo "========================================="
+        echo "📁 Xem intermediate Của Module app:"
+        echo "========================================="
+        find duix-android/dh_aigc_android/app/build -name "intermediate" -type d -exec ls -la {} \; 2>/dev/null || echo "Không có thư mục intermediate"
 
-    # ===== UPLOAD CÁC FILE ĐÃ SỬA =====
+    # ===== THỬ BUILD RIÊNG APP MODULE =====
+    - name: "🚀 Build Riêng Module app"
+      run: |
+        cd duix-android/dh_aigc_android
+        ./gradlew :app:assembleDebug --stacktrace
+
+    # ===== THỬ BUILD RIÊNG TEST MODULE =====
+    - name: "🚀 Build Riêng Module test"
+      run: |
+        cd duix-android/dh_aigc_android
+        ./gradlew :test:assembleDebug --stacktrace
+
+    # ===== TÌM LẠI APK SAU BUILD RIÊNG =====
+    - name: "🔍 Tìm Lại APK Sau Build Riêng"
+      if: always()
+      run: |
+        echo "========================================="
+        echo "🔍 TÌM LẠI TẤT CẢ FILE APK:"
+        echo "========================================="
+        find . -name "*.apk" -type f -exec ls -lh {} \;
+        
+        # Lưu danh sách APK vào file
+        find . -name "*.apk" -type f > apk_list.txt
+
+    # ===== UPLOAD APK =====
+    - name: "📤 Upload Tất Cả APK"
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: all-apk-files
+        path: |
+          **/*.apk
+        if-no-files-found: warn
+        
+    # ===== UPLOAD APK LIST =====
+    - name: "📤 Upload Danh Sách APK"
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: apk-list
+        path: apk_list.txt
+        if-no-files-found: warn
+
+    # ===== UPLOAD MODIFIED FILES =====
     - name: "📤 Upload Modified Kotlin Files"
       if: always()
       uses: actions/upload-artifact@v4
@@ -273,30 +185,4 @@ jobs:
         path: |
           duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt
           duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/MainActivity.kt
-          duix-android/dh_aigc_android/duix-sdk/src/main/java/ai/guiji/duix/sdk/client/DUIX.java
         if-no-files-found: warn
-
-    # ===== UPLOAD APK NẾU BUILD THÀNH CÔNG =====
-    - name: "📦 Find APK Files"
-      if: env.BUILD_FAILED != 'true'
-      run: |
-        echo "========================================="
-        echo "📦 TÌM TẤT CẢ FILE APK:"
-        echo "========================================="
-        find duix-android -name "*.apk" -type f -exec ls -lh {} \; || echo "❌ Không tìm thấy file APK nào"
-
-    - name: "📤 Upload APK"
-      if: env.BUILD_FAILED != 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: duix-mobile-apk
-        path: duix-android/dh_aigc_android/**/build/outputs/apk/**/*.apk
-        if-no-files-found: warn
-
-    # ===== UPLOAD BUILD LOG =====
-    - name: "📤 Upload Build Log"
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-log
-        path: duix-android/dh_aigc_android/build_output.log
