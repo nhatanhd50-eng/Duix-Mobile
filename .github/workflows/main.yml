@@ -1,4 +1,4 @@
-name: Build APK with Gradle 9.0 & Logs (Fixed Path)
+name: Build APK with Gradle 9.0 & Logs (Fixed Path & Linux Script)
 
 on:
   push:
@@ -20,35 +20,31 @@ jobs:
         pwd
         ls -la
 
-    # Kiểm tra có phải project Gradle không (có settings.gradle không)
-    - name: Check if Gradle project exists
-      id: gradle_check
-      run: |
-        cd duix-android/dh_aigc_android
-        if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
-          echo "gradle_project_exists=true" >> $GITHUB_OUTPUT
-        else
-          echo "gradle_project_exists=false" >> $GITHUB_OUTPUT
-        fi
-
-    # Nếu thiếu gradlew/gradlew.bat, copy từ template hoặc tạo mới
+    # Tạo lại gradlew nếu thiếu (dành cho Linux)
     - name: Create gradlew if missing
       run: |
         cd duix-android/dh_aigc_android
         if [ ! -f "gradlew" ]; then
-          echo "#!/bin/sh" > gradlew
-          echo "exec ./gradlew.bat \"\$@\"" >> gradlew
+          echo "Creating gradlew..."
+          cat > gradlew << 'EOF'
+#!/bin/sh
+# Detect the operating system
+if [ "$(uname)" = "Darwin" ]; then
+    OS_NAME="osx"
+elif [ "$(expr substr $(uname -s) 1 5)" = "Linux" ]; then
+    OS_NAME="linux"
+else
+    echo "Unsupported OS"
+    exit 1
+fi
+
+# Execute gradle wrapper
+exec java -jar "gradle/wrapper/gradle-wrapper.jar" "$@"
+EOF
           chmod +x gradlew
-          echo "@echo off" > gradlew.bat
-          echo "set DIRNAME=%~dp0" >> gradlew.bat
-          echo "if \"%OS%\" == \"Windows_NT\" setlocal" >> gradlew.bat
-          echo "set APP_BASE_NAME=%~n0" >> gradlew.bat
-          echo "set APP_HOME=%DIRNAME%" >> gradlew.bat
-          echo "java -jar \"%APP_HOME%gradle/wrapper/gradle-wrapper.jar\" %*" >> gradlew.bat
-          echo "exit /b %ERRORLEVEL%" >> gradlew.bat
         fi
 
-    # Cập nhật Gradle Wrapper lên 9.0 (nếu cần)
+    # Cập nhật Gradle Wrapper lên 9.0
     - name: Update Gradle Wrapper to 9.0
       run: |
         cd duix-android/dh_aigc_android
@@ -57,7 +53,7 @@ jobs:
     - name: Check gradlew exists
       run: |
         cd duix-android/dh_aigc_android
-        ls -la gradlew gradlew.bat
+        ls -la gradlew
         ./gradlew --version
 
     # Build APK với log full
