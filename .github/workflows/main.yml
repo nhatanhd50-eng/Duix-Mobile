@@ -1,4 +1,4 @@
-name: Manual Install Gradle 9.0 & Build (Fixed)
+name: Build APK with Gradle 9.0 & Logs (Fixed YAML)
 
 on:
   push:
@@ -10,73 +10,41 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Change to Android project dir
+        run: cd duix-android/dh_aigc_android && pwd
+
+      - name: Create gradlew if missing
         run: |
           cd duix-android/dh_aigc_android
-          echo "Current directory:"
-          pwd
-
-      # 1. TẢI VÀ CÀI ĐẶT GRADLE 9.0 THỦ CÔNG (Thay vì dùng wrapper hỏng)
-      - name: Download & Install Gradle 9.0 Manually
-        id: install_gradle
-        run: |
-          echo "Downloading Gradle 9.0..."
-          # Tải file zip từ trang chủ
-          wget -q https://services.gradle.org/distributions/gradle-9.0-bin.zip -O gradle.zip || echo "DOWNLOAD_FAILED=true" >> $GITHUB_ENV
-          
-          if [ ! -f gradle.zip ]; then
-             echo "DOWNLOAD_FAILED=true" >> $GITHUB_ENV
-             exit 0
+          if [ ! -f gradlew ]; then
+            echo "Creating gradlew..."
+            cat > gradlew << 'EOF'
+          #!/bin/sh
+          exec java -jar "gradle/wrapper/gradle-wrapper.jar" "$@"
+          EOF
+            chmod +x gradlew
           fi
-          
-          echo "Extracting Gradle..."
-          unzip -q gradle.zip
-          
-          # Thêm đường dẫn bin của Gradle vừa tải vào PATH của hệ thống
-          echo "$(pwd)/gradle-9.0/bin" >> $GITHUB_PATH
-          
-          echo "Gradle installed at $(pwd)/gradle-9.0"
-        continue-on-error: true
 
-      # 2. CHECK LỖI TẢI VỀ (Nếu tải thất bại)
-      - name: Check Install Status
-        if: env.DOWNLOAD_FAILED == 'true'
-        run: |
-          echo "❌ FAILED TO DOWNLOAD GRADLE FROM OFFICIAL SITE"
-          exit 1
-
-      # 3. FIX LẠI WRAPPER TRONG PROJECT (Dùng bản Gradle vừa tải để sửa)
-      - name: Regenerate Gradle Wrapper
+      - name: Update Gradle Wrapper to 9.0
         run: |
           cd duix-android/dh_aigc_android
-          
-          echo "Removing broken wrapper..."
-          rm -rf gradle/wrapper/gradle-wrapper.jar
-          
-          echo "Regenerating wrapper using installed Gradle 9.0..."
-          # Dùng lệnh 'gradle' (vừa cài ở trên) thay vì './gradlew'
-          gradle wrapper --gradle-version 9.0 --distribution-type bin
-          
-          # Cấp quyền thực thi
-          chmod +x gradlew
-          
-          echo "✅ Wrapper regenerated successfully."
+          ./gradlew wrapper --gradle-version 9.0 --distribution-type bin
+
+      - name: Check gradlew
+        run: |
+          cd duix-android/dh_aigc_android
+          ls -l gradlew
           ./gradlew --version
 
-      # 4. BUILD APK
       - name: Build Debug APK
         id: build_debug
         run: |
           cd duix-android/dh_aigc_android
-          echo "🚀 Starting Build..."
-          # Lưu log build vào file build_log.txt
           ./gradlew assembleDebug --no-daemon --stacktrace --info > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
         continue-on-error: true
 
-      # 5. HIỂN THỊ LỖI BUILD (Nếu bước build thất bại)
       - name: Print Full Build Log (if failed)
         if: env.BUILD_FAILED == 'true'
         run: |
