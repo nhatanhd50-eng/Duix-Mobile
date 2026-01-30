@@ -1,0 +1,90 @@
+name: Build APK with Gradle 9.0 & Logs (Fixed Path & Linux Script)
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Di chuyển vào đúng thư mục chứa project Android
+      - name: Change working directory
+        run: |
+          cd duix-android/dh_aigc_android
+          pwd
+          ls -la
+
+      # Tạo lại gradlew nếu thiếu (dành cho Linux)
+      - name: Create gradlew if missing
+        run: |
+          cd duix-android/dh_aigc_android
+          if [ ! -f "gradlew" ]; then
+            echo "Creating gradlew..."
+            cat > gradlew << 'EOF'
+#!/bin/sh
+# Execute gradle wrapper
+exec java -jar "gradle/wrapper/gradle-wrapper.jar" "$@"
+EOF
+            chmod +x gradlew
+          fi
+
+      # Cập nhật Gradle Wrapper lên 9.0
+      - name: Update Gradle Wrapper to 9.0
+        run: |
+          cd duix-android/dh_aigc_android
+          ./gradlew wrapper --gradle-version 9.0 --distribution-type bin
+
+      - name: Check gradlew exists
+        run: |
+          cd duix-android/dh_aigc_android
+          ls -la gradlew
+          ./gradlew --version
+
+      # Build APK với log full
+      - name: Build Debug APK
+        id: build_debug
+        run: |
+          cd duix-android/dh_aigc_android
+          ./gradlew assembleDebug --no-daemon --stacktrace --info > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
+        continue-on-error: true
+
+      # In toàn bộ log lỗi (nếu có) ra terminal để bạn dễ copy
+      - name: Print Full Build Log (Copy All Below)
+        if: env.BUILD_FAILED == 'true'
+        run: |
+          cd duix-android/dh_aigc_android
+          echo "📋 FULL BUILD LOG (COPY ALL BELOW):"
+          echo "====================================="
+          cat build_log.txt
+          echo "====================================="
+          echo "📋 END OF LOG"
+        shell: bash
+
+      # Upload log lỗi nếu build fail
+      - name: Upload Build Log (on failure)
+        if: env.BUILD_FAILED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-failure-log
+          path: duix-android/dh_aigc_android/build_log.txt
+
+      # Upload APK nếu build success
+      - name: Upload Debug APK
+        if: env.BUILD_FAILED != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: duix-android/dh_aigc_android/app/build/outputs/apk/debug/app-debug.apk
+
+      # Upload toàn bộ log dù có lỗi hay không
+      - name: Upload Full Build Log (Always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-build-log
+          path: duix-android/dh_aigc_android/build_log.txt
