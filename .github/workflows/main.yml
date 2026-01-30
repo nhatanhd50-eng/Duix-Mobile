@@ -1,6 +1,6 @@
-name: Build APK Final CMake Fix
+name: Build APK Duix Mobile (Clean)
 
-on: 
+on:
   workflow_dispatch:
 
 jobs:
@@ -11,75 +11,28 @@ jobs:
       # Bước 1: Checkout code
       - name: Checkout Source Code
         uses: actions/checkout@v4
-        with:
-          repository: nhatanhd50-eng/Duix-Mobile
-          ref: main
 
-      # Bước 2: Cài đặt Java 17
+      # Bước 2: Cài đặt Java 17 (BẮT BUỘC)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # Bước 3: Cài đặt Android SDK
+      # Bước 3: Cài đặt Android SDK (Quan trọng)
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        # `android-actions/setup-android` sẽ tự động cài NDK và CMake phù hợp nhất, tránh lỗi thủ công.
 
-      # Bước 4: Cài đặt thủ công CMake 3.18.1 (BẮT BUỘC - SỬA XUNG ĐỘNG TÍNH TÍNH)
-      - name: Install CMake 3.18.1
+      # Bước 4: Cấp quyền thực thi cho Gradle
+      - name: Grant execute permission for Gradlew
         run: |
-          # Tải file CMake
-          wget https://github.com/Kitware/CMake/releases/download/v3.18.1/cmake-3.18.1-Linux-x86_64.tar.gz -O cmake-3.18.1.tar.gz
-          
-          # Giải nén
-          tar -xzf cmake-3.18.1-Linux-x86_64.tar.gz
-          
-          # Di chuyển file vào thư mục SDK (Thay thế cho thư mục system để tránh lỗi xung đột với Gradle mới)
-          sudo mkdir -p /usr/local/cmake
-          sudo cp -r cmake-3.18.1-Linux-x86_64/* /usr/local/cmake
-          
-          # Cập nhật biến môi trường PATH (Ưu tiên bản cài thủ công)
-          echo "export PATH=/usr/local/cmake:$PATH" >> $GITHUB_ENV
+          chmod +x gradlew
+        # Chỉ cần cấp quyền thực thi (execute) để chạy được.
+        # Không cần cài CMake thủ công.
 
-      # Bước 5: Setup Gradlew (Sửa lỗi incompatibility)
-      - name: Setup Gradlew
+      # Bước 5: Build (Chạy lệnh chuẩn)
+      - name: Build APK
         run: |
           cd duix-android/dh_aigc_android
-          
-          # --- QUAN TRỌNG: XÓA CÁCH TẢI NỘNG THỦ CÔNG (Để đảm bảo vệ hệ thống) ---
-          rm -rf gradlew gradlew.bat gradlew-wrapper.properties
-          
-          # Tạo lại file cấu hình gradlew properties (Quan trọng bản 8.3)
-          # CẤP PHÍA NÓI:
-          echo "distributionBase=GRADLE_USER_HOME"
-          echo "distributionPath=wrapper/dists"
-          echo "distributionUrl=https://services.gradle.org/distributions/gradle-8.3.0/gradle-wrapper.jar"
-          echo "zipStoreBase=GRADLE_USER_HOME"
-          
-          # Tải Gradle Wrapper phiên bản 8.3 (Giải quyết vấn đề tương thích với Gradle cũ)
-          curl -L https://github.com/gradle/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-          curl -L https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradle-wrapper.properties -o gradle/wrapper/gradle-wrapper.properties
-          
-          # Cấp quyền thực thi
-          chmod +x gradlew gradlew gradlew-wrapper.properties gradlew gradlew.bat
-          
-          # --- CHẤN DỖNG BẮC CÁCH KHÁC PHÍA SỬA CÁC CÔNG (Để tránh lỗi "Deprecated features") ---
-          # Thêm cờ bỏ qua cảnh báo lỗi
-          # Tuy nhiên, vì cách này sửa trực tiếp file properties, nếu file `build.gradle` của dự án có cấu hình đặc biệt gây lỗi, bạn cần mở file `build.gradle` tìm dòng `android.useDeprecatedNdk` hoặc `android.useAndroidX` rồi xóa đi (hoặc đổi thành false).
-          
-          echo "Gradlew đã sẵn sàng với cấu hình Gradle 8.3"
-
-      # Bước 6: Build (Chạy lệnh chuẩn)
-      - name: Build with Gradle
-        run: |
-          cd duix-android/dh_aigc_android
-          # Chạy lệnh build với chế độ cảnh báo đầy đủ để xem lỗi chi tiết
-          ./gradlew assembleDebug --warning-mode all --stacktrace
-
-      # Bước 7: Upload APK
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Duix-Mobile-Final-Fix-APK
-          path: '**/*.apk'
+          ./gradlew assembleDebug --stacktrace
