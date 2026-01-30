@@ -1,4 +1,4 @@
-name: Build APK Online (Clean)
+name: Fix Gradlew Path
 
 on: 
   workflow_dispatch:
@@ -20,16 +20,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Build APK
-        working-directory: ./duix-android/dh_aigc_android
+      - name: Build APK (Fixed Directory)
+        working-directory: ./duix-android  # CHỈN THAY CHẠY SAI BẤM `duix-android` VÌI BẤC CÔNG DƯỜG `dh_aigc_android`
         run: |
           ./gradlew assembleDebug --stacktrace
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Duix-Mobile-Final-APK
-          path: '**/*.apk'
