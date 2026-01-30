@@ -1,4 +1,4 @@
-name: Build APK Final
+name: Build APK Complete Debug
 
 on: 
   workflow_dispatch:
@@ -26,22 +26,35 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # Bước 4: Cài CMake 3.18.1
+    # Bước 4: Accept Android Licenses
+    - name: Accept Android Licenses
+      run: |
+        yes | sdkmanager --licenses || true
+
+    # Bước 5: Cài CMake 3.18.1
     - name: Install CMake 3.18.1
       run: |
+        echo "📦 Cài CMake 3.18.1..."
         wget -q https://github.com/Kitware/CMake/releases/download/v3.18.1/cmake-3.18.1-Linux-x86_64.tar.gz
         tar -xzf cmake-3.18.1-Linux-x86_64.tar.gz
         mkdir -p $ANDROID_HOME/cmake/3.18.1
         cp -r cmake-3.18.1-Linux-x86_64/* $ANDROID_HOME/cmake/3.18.1/
+        echo "✅ CMake installed at: $ANDROID_HOME/cmake/3.18.1/bin/cmake"
+        $ANDROID_HOME/cmake/3.18.1/bin/cmake --version
 
-    # Bước 5: Cài NDK
+    # Bước 6: Cài NDK
     - name: Install NDK
       run: |
-        sdkmanager --install "ndk;21.4.7075529"
-        sdkmanager --install "ndk;25.2.9519653"
+        echo "📦 Cài NDK..."
+        sdkmanager "ndk;21.4.7075529"
+        sdkmanager "ndk;23.1.7779620"
+        sdkmanager "ndk;25.2.9519653"
+        
+        echo "✅ NDK đã cài:"
+        ls -la $ANDROID_HOME/ndk/ || echo "Chưa có NDK"
 
-    # Bước 6: Setup Gradlew
-    - name: Restore Gradlew Manually
+    # Bước 7: Setup Gradlew
+    - name: Setup Gradlew
       run: |
         cd duix-android/dh_aigc_android
         rm -rf gradlew gradlew.bat gradle/
@@ -60,35 +73,106 @@ jobs:
         EOF
         
         chmod +x gradlew
+        echo "✅ Gradlew created"
 
-    # Bước 7: Tạo local.properties
+    # Bước 8: Tạo local.properties
     - name: Create local.properties
       run: |
         cd duix-android/dh_aigc_android
-        echo "sdk.dir=$ANDROID_HOME" > local.properties
-        echo "ndk.dir=$ANDROID_HOME/ndk/25.2.9519653" >> local.properties
-        echo "cmake.dir=$ANDROID_HOME/cmake/3.18.1" >> local.properties
+        cat > local.properties << EOF
+        sdk.dir=$ANDROID_HOME
+        ndk.dir=$ANDROID_HOME/ndk/25.2.9519653
+        cmake.dir=$ANDROID_HOME/cmake/3.18.1
+        EOF
+        
+        echo "✅ local.properties:"
+        cat local.properties
 
-    # Bước 8: Build
-    - name: Build with Gradle
+    # Bước 9: Kiểm tra cấu hình project
+    - name: Check Project Structure
       run: |
         cd duix-android/dh_aigc_android
-        ./gradlew assembleDebug --stacktrace
-
-    # Bước 9: TÌM FILE APK (QUAN TRỌNG!)
-    - name: Find APK files
-      run: |
-        echo "🔍 Tìm tất cả file APK..."
-        find . -name "*.apk" -type f
+        echo "📁 Cấu trúc project:"
+        ls -la
         
         echo ""
-        echo "📁 Chi tiết:"
-        find . -name "*.apk" -type f -exec ls -lh {} \;
+        echo "📋 settings.gradle:"
+        cat settings.gradle 2>/dev/null || cat settings.gradle.kts 2>/dev/null || echo "Không tìm thấy"
+        
+        echo ""
+        echo "📋 build.gradle (root):"
+        cat build.gradle 2>/dev/null || cat build.gradle.kts 2>/dev/null || echo "Không tìm thấy"
 
-    # Bước 10: Upload APK (ĐÃ SỬA PATH)
+    # Bước 10: Clean trước khi build
+    - name: Clean Build
+      run: |
+        cd duix-android/dh_aigc_android
+        ./gradlew clean --stacktrace || true
+
+    # Bước 11: Build với INFO log
+    - name: Build APK (Debug Mode)
+      run: |
+        cd duix-android/dh_aigc_android
+        
+        echo "🔍 Gradle version:"
+        ./gradlew --version
+        
+        echo ""
+        echo "🚀 Building APK..."
+        ./gradlew assembleDebug \
+          --info \
+          --stacktrace \
+          --no-daemon \
+          2>&1 | tee ../build.log
+      continue-on-error: true
+      env:
+        GRADLE_OPTS: "-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError"
+
+    # Bước 12: Tìm APK trong toàn bộ workspace
+    - name: Find All APK Files
+      if: always()
+      run: |
+        echo "🔍 TÌM TẤT CẢ FILE APK TRONG WORKSPACE:"
+        find . -name "*.apk" -type f 2>/dev/null || echo "Không tìm thấy APK nào"
+        
+        echo ""
+        echo "📊 CHI TIẾT:"
+        find . -name "*.apk" -type f -exec ls -lh {} \; 2>/dev/null || echo "Không có file"
+
+    # Bước 13: Kiểm tra thư mục outputs
+    - name: Check Output Directories
+      if: always()
+      run: |
+        echo "📁 Kiểm tra thư mục build/outputs:"
+        find . -type d -name "outputs" -exec ls -laR {} \; 2>/dev/null || echo "Không tìm thấy thư mục outputs"
+
+    # Bước 14: Upload build log
+    - name: Upload Build Log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: duix-android/build.log
+        if-no-files-found: warn
+
+    # Bước 15: Upload APK (nếu có)
     - name: Upload APK
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: Duix-Mobile-APK
-        path: duix-android/dh_aigc_android/app/build/outputs/apk/debug/
+        path: |
+          **/build/outputs/apk/**/*.apk
+          **/*.apk
+        if-no-files-found: warn
+
+    # Bước 16: Upload toàn bộ build outputs
+    - name: Upload All Build Outputs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-outputs
+        path: |
+          duix-android/dh_aigc_android/app/build/outputs/
+          duix-android/dh_aigc_android/*/build/outputs/
         if-no-files-found: warn
