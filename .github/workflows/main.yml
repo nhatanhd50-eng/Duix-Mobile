@@ -1,4 +1,4 @@
-name: Dual Java Setup (Fix SDKManager & Kotlin)
+name: Build with JDK 17 & Kotlin Fix (High Memory)
 
 on:
   push:
@@ -13,54 +13,48 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ---------------------------------------------------------
-      # GIAI ĐOẠN 1: Dùng JAVA 17 để chạy tool SDKMANAGER
-      # ---------------------------------------------------------
-      - name: Set up JDK 17 (For SDK Tools)
+      # 1. BẮT BUỘC DÙNG JDK 17 (Theo yêu cầu của Android Gradle Plugin)
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install CMake 3.18.1 (Using Java 17)
+      # 2. CÀI ĐẶT CMAKE 3.18.1
+      - name: Install CMake 3.18.1
         run: |
           echo "Installing CMake 3.18.1..."
           echo "yes" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "cmake;3.18.1"
-          
-          echo "✅ CMake installed versions:"
-          ls -l ${ANDROID_HOME}/cmake
 
-      # ---------------------------------------------------------
-      # GIAI ĐOẠN 2: Chuyển sang JAVA 11 để Build Code cũ
-      # ---------------------------------------------------------
-      - name: Set up JDK 11 (For Build)
-        uses: actions/setup-java@v4
-        with:
-          java-version: '11'
-          distribution: 'temurin'
-
-      # Cài đặt Gradle 8.5
+      # 3. CÀI ĐẶT GRADLE 8.5
       - name: Setup Gradle Manually
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O gradle.zip
           unzip -q gradle.zip
           echo "$(pwd)/gradle-8.5/bin" >> $GITHUB_PATH
 
-      # ---------------------------------------------------------
-      # GIAI ĐOẠN 3: BUILD VÀ DEBUG
-      # ---------------------------------------------------------
-      - name: Build Debug APK (With JDK 11)
+      # 4. BUILD VỚI CẤU HÌNH FIX LỖI KOTLIN CRASH
+      - name: Build Debug APK
         id: build_step
         run: |
           cd duix-android/dh_aigc_android
-          echo "🚀 Building..."
-          echo "Using Java version:"
-          java -version
+          echo "🚀 Building with JDK 17 + Memory Tuning..."
           
-          # Build với Java 11 và cấp 3GB RAM
-          gradle assembleDebug --no-daemon --stacktrace --info -Dorg.gradle.jvmargs=-Xmx3072m > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
+          # CÁC THAM SỐ QUAN TRỌNG ĐỂ SỬA LỖI:
+          # -Xmx6g: Cấp 6GB RAM cho Gradle (Github Runner có 7GB)
+          # kotlin.compiler.execution.strategy=in-process: Ép Kotlin chạy trực tiếp, tránh lỗi Worker chết
+          # kotlin.daemon.jvm.options: Cấp RAM riêng cho daemon Kotlin
+          
+          gradle assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            -Dorg.gradle.jvmargs="-Xmx6g -XX:+HeapDumpOnOutOfMemoryError" \
+            -Dkotlin.compiler.execution.strategy=in-process \
+            -Dkotlin.daemon.jvm.options="-Xmx2g" \
+            > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
 
-      # HIỂN THỊ LỖI (Vẫn giữ 200 dòng cuối)
+      # 5. HIỂN THỊ LỖI (Vẫn giữ 200 dòng cuối)
       - name: 🔴 SHOW REAL ERROR (Last 200 lines)
         if: env.BUILD_FAILED == 'true'
         run: |
