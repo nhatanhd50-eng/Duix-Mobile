@@ -1,42 +1,50 @@
 name: Build APK with Gradle 9.0 & Logs (Fixed YAML)
+
 on:
   push:
     branches: ["main", "develop"]
   pull_request:
     branches: ["main"]
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Change to Android project dir
         run: cd duix-android/dh_aigc_android && pwd
+
       - name: Create gradlew if missing
         run: |
           cd duix-android/dh_aigc_android
           if [ ! -f gradlew ]; then
             echo "Creating gradlew..."
             cat > gradlew << 'EOF'
-#!/bin/sh
-exec java -jar "gradle/wrapper/gradle-wrapper.jar" "$@"
-EOF
+          #!/bin/sh
+          exec java -jar "gradle/wrapper/gradle-wrapper.jar" "$@"
+          EOF
             chmod +x gradlew
           fi
+
       - name: Update Gradle Wrapper to 9.0
         run: |
           cd duix-android/dh_aigc_android
           ./gradlew wrapper --gradle-version 9.0 --distribution-type bin
+
       - name: Check gradlew
         run: |
           cd duix-android/dh_aigc_android
           ls -l gradlew
           ./gradlew --version
+
       - name: Build Debug APK
         id: build_debug
         run: |
           cd duix-android/dh_aigc_android
           ./gradlew assembleDebug --no-daemon --stacktrace --info > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
         continue-on-error: true
+
       - name: Print Full Build Log (if failed)
         if: env.BUILD_FAILED == 'true'
         run: |
@@ -45,12 +53,14 @@ EOF
           echo "====================================="
           cat build_log.txt
           echo "====================================="
+
       - name: Upload Build Log (on failure)
         if: env.BUILD_FAILED == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: build-failure-log
           path: duix-android/dh_aigc_android/build_log.txt
+
       - name: Upload Debug APK
         if: env.BUILD_FAILED != 'true'
         uses: actions/upload-artifact@v4
