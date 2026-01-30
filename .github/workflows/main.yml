@@ -1,4 +1,4 @@
-name: Build APK with Gradle 9.0 & Logs (Fixed YAML)
+name: Build APK with Gradle 9.0 & Logs (Step-by-step Debug)
 
 on:
   push:
@@ -10,21 +10,58 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: List root directory
+        run: ls -la
 
       - name: Change to Android project dir
-        run: cd duix-android/dh_aigc_android && pwd
+        run: |
+          cd duix-android/dh_aigc_android
+          pwd
+          ls -la
+
+      - name: Check if gradlew exists
+        run: |
+          cd duix-android/dh_aigc_android
+          if [ -f gradlew ]; then
+            echo "gradlew exists."
+          else
+            echo "gradlew NOT FOUND!"
+          fi
+
+      - name: Check gradle wrapper structure
+        run: |
+          cd duix-android/dh_aigc_android
+          if [ -d gradle ]; then
+            echo "gradle directory exists:"
+            find gradle -type f
+          else
+            echo "gradle directory NOT FOUND!"
+          fi
 
       - name: Create gradlew if missing
         run: |
           cd duix-android/dh_aigc_android
           if [ ! -f gradlew ]; then
             echo "Creating gradlew..."
-            cat > gradlew << 'EOF'
-          #!/bin/sh
-          exec java -jar "gradle/wrapper/gradle-wrapper.jar" "$@"
-          EOF
+            # Dùng echo thay cho cat EOF để tránh lỗi thụt dòng YAML
+            echo '#!/bin/sh' > gradlew
+            echo 'exec java -jar "gradle/wrapper/gradle-wrapper.jar" "$@"' >> gradlew
             chmod +x gradlew
+          else
+            echo "gradlew already exists."
+          fi
+
+      - name: Check gradle wrapper JAR
+        run: |
+          cd duix-android/dh_aigc_android
+          if [ -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "gradle-wrapper.jar exists."
+            jar -tf gradle/wrapper/gradle-wrapper.jar | head -10
+          else
+            echo "gradle-wrapper.jar NOT FOUND!"
           fi
 
       - name: Update Gradle Wrapper to 9.0
@@ -32,10 +69,9 @@ jobs:
           cd duix-android/dh_aigc_android
           ./gradlew wrapper --gradle-version 9.0 --distribution-type bin
 
-      - name: Check gradlew
+      - name: Check gradlew version
         run: |
           cd duix-android/dh_aigc_android
-          ls -l gradlew
           ./gradlew --version
 
       - name: Build Debug APK
