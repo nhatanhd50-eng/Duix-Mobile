@@ -1,4 +1,4 @@
-name: Fix Kotlin Crash (JDK 11) & Build
+name: Dual Java Setup (Fix SDKManager & Kotlin)
 
 on:
   push:
@@ -13,37 +13,54 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 1. DÙNG JDK 11 THAY VÌ 17 (Để tương thích với Kotlin cũ)
-      - name: Set up JDK 11
+      # ---------------------------------------------------------
+      # GIAI ĐOẠN 1: Dùng JAVA 17 để chạy tool SDKMANAGER
+      # ---------------------------------------------------------
+      - name: Set up JDK 17 (For SDK Tools)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install CMake 3.18.1 (Using Java 17)
+        run: |
+          echo "Installing CMake 3.18.1..."
+          echo "yes" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "cmake;3.18.1"
+          
+          echo "✅ CMake installed versions:"
+          ls -l ${ANDROID_HOME}/cmake
+
+      # ---------------------------------------------------------
+      # GIAI ĐOẠN 2: Chuyển sang JAVA 11 để Build Code cũ
+      # ---------------------------------------------------------
+      - name: Set up JDK 11 (For Build)
         uses: actions/setup-java@v4
         with:
           java-version: '11'
           distribution: 'temurin'
 
-      # 2. CÀI ĐẶT CMAKE 3.18.1 (Vẫn giữ bước này vì dự án cần)
-      - name: Install CMake 3.18.1
-        run: |
-          echo "Installing CMake 3.18.1..."
-          echo "yes" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "cmake;3.18.1"
-
-      # 3. CÀI ĐẶT GRADLE 8.5
+      # Cài đặt Gradle 8.5
       - name: Setup Gradle Manually
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O gradle.zip
           unzip -q gradle.zip
           echo "$(pwd)/gradle-8.5/bin" >> $GITHUB_PATH
 
-      # 4. CHẠY BUILD (Thêm tham số cấp thêm RAM -Xmx3072m)
-      - name: Build Debug APK
+      # ---------------------------------------------------------
+      # GIAI ĐOẠN 3: BUILD VÀ DEBUG
+      # ---------------------------------------------------------
+      - name: Build Debug APK (With JDK 11)
         id: build_step
         run: |
           cd duix-android/dh_aigc_android
-          echo "🚀 Building with JDK 11 & More RAM..."
+          echo "🚀 Building..."
+          echo "Using Java version:"
+          java -version
           
-          # Thêm -Dorg.gradle.jvmargs=-Xmx3072m để cấp 3GB RAM cho Gradle Daemon
+          # Build với Java 11 và cấp 3GB RAM
           gradle assembleDebug --no-daemon --stacktrace --info -Dorg.gradle.jvmargs=-Xmx3072m > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
 
-      # 5. HIỂN THỊ LỖI (Vẫn giữ in 200 dòng cuối để debug)
+      # HIỂN THỊ LỖI (Vẫn giữ 200 dòng cuối)
       - name: 🔴 SHOW REAL ERROR (Last 200 lines)
         if: env.BUILD_FAILED == 'true'
         run: |
@@ -55,7 +72,6 @@ jobs:
           echo "========================================================="
           exit 1
 
-      # 6. UPLOAD APK
       - name: Upload APK
         if: env.BUILD_FAILED != 'true'
         uses: actions/upload-artifact@v4
