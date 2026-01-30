@@ -29,55 +29,39 @@ jobs:
     # Bước 4: Cài thủ công CMake 3.18.1
     - name: Install CMake 3.18.1
       run: |
-        # Tải file CMake 3.18.1 cho Linux
         wget -q https://github.com/Kitware/CMake/releases/download/v3.18.1/cmake-3.18.1-Linux-x86_64.tar.gz
-        
-        # Giải nén
         tar -xzf cmake-3.18.1-Linux-x86_64.tar.gz
-        
-        # Tạo thư mục đích trong SDK Android
         mkdir -p $ANDROID_HOME/cmake/3.18.1
-        
-        # Di chuyển file CMake vào đúng chỗ
         cp -r cmake-3.18.1-Linux-x86_64/* $ANDROID_HOME/cmake/3.18.1/
-        
-        echo "✅ Đã cài đặt CMake 3.18.1 vào $ANDROID_HOME/cmake/3.18.1"
-        ls -l $ANDROID_HOME/cmake/3.18.1/bin/cmake
+        echo "✅ CMake 3.18.1 installed"
 
-    # Bước 5: Setup Gradlew với Gradle 9.0
-    - name: Restore Gradlew Manually (Gradle 9.0)
+    # Bước 5: Setup Gradlew với Gradle 8.3 (ỔN ĐỊNH)
+    - name: Restore Gradlew Manually (Gradle 8.3)
       run: |
         cd duix-android/dh_aigc_android
         rm -rf gradlew gradlew.bat gradle/
         mkdir -p gradle/wrapper
         
-        # Tải gradlew script từ Gradle 9.0
-        curl -sL https://raw.githubusercontent.com/gradle/gradle/v9.0.0/gradlew -o gradlew
-        curl -sL https://raw.githubusercontent.com/gradle/gradle/v9.0.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+        curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradlew -o gradlew
+        curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
         
-        # Tạo file properties với Gradle 9.0
         cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
         distributionBase=GRADLE_USER_HOME
         distributionPath=wrapper/dists
-        distributionUrl=https\://services.gradle.org/distributions/gradle-9.0-bin.zip
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.3-bin.zip
         networkTimeout=10000
-        validateDistributionUrl=true
         zipStoreBase=GRADLE_USER_HOME
         zipStorePath=wrapper/dists
         EOF
         
         chmod +x gradlew
-        
-        echo "✅ Gradle Wrapper 9.0 đã sẵn sàng!"
-        cat gradle/wrapper/gradle-wrapper.properties
+        echo "✅ Gradle 8.3 ready"
 
     # Bước 6: Build
     - name: Build with Gradle
       run: |
         cd duix-android/dh_aigc_android
-        echo "🔍 Kiểm tra Gradle version:"
         ./gradlew --version
-        echo "🚀 Building APK..."
         ./gradlew assembleDebug --stacktrace
 
     # Bước 7: Upload APK
