@@ -194,11 +194,75 @@ jobs:
         EOF
         chmod +x gradlew
 
-    - name: "🚀 Build APK"
+    # ===== BUILD WITH DETAILED LOGGING =====
+    - name: "🚀 Build APK (Lưu Log)"
       id: build
       run: |
         cd duix-android/dh_aigc_android
-        ./gradlew assembleDebug --stacktrace || echo "BUILD_FAILED=true" >> $GITHUB_ENV
+        # Build và lưu toàn bộ output
+        ./gradlew assembleDebug --info > build_output.log 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
+        
+        # Lưu exit code để biết build thành công hay thất bại
+        echo "BUILD_EXIT_CODE=$?" >> $GITHUB_ENV
+
+    # ===== STEP MỚI: OUTPUT CHI TIẾT LỖI =====
+    - name: "🔴 HIỂN THỊ LỖI CHI TIẾT"
+      if: always()
+      run: |
+        cd duix-android/dh_aigc_android
+        echo "========================================="
+        echo "📊 KẾT QUẢ BUILD"
+        echo "========================================="
+        
+        if [ "$BUILD_EXIT_CODE" == "0" ]; then
+          echo "✅ BUILD THÀNH CÔNG!"
+        else
+          echo "❌ BUILD THẤT BẠI! (Exit code: $BUILD_EXIT_CODE)"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 TASK THẤT BẠI:"
+          echo "========================================="
+          grep "> Task.*FAILED" build_output.log || echo "Không tìm thấy task failed"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 LỖI KOTLIN:"
+          echo "========================================="
+          grep "e: " build_output.log | grep -v "note: " | head -20 || echo "Không tìm thấy lỗi Kotlin"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 LỖI KHÁC:"
+          echo "========================================="
+          grep -E "Error:|Exception:|FAILED" build_output.log | grep -v "at " | head -20 || echo "Không tìm thấy lỗi khác"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 NGUYÊN NHÂN LỖI:"
+          echo "========================================="
+          grep -A10 "What went wrong:" build_output.log || echo "Không tìm thấy phần What went wrong"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 NHỮNG DÒNG CUỐI CÙNG CỦA LOG:"
+          echo "========================================="
+          tail -n 30 build_output.log
+        fi
+
+    # ===== CHECK KOTLIN FILES =====
+    - name: "📝 Kiểm Tra Các File Kotlin Đã Sửa"
+      run: |
+        echo "========================================="
+        echo "📝 KIỂM TRA CALLACTIVITY.KT"
+        echo "========================================="
+        grep -n "private fun setupChatUI\|protected override fun setupChatUI\|private fun addChatMessage\|protected override fun addChatMessage\|backgroundColor\|setBackgroundColor" duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt || echo "Không tìm thấy mẫu cần kiểm tra"
+        
+        echo ""
+        echo "========================================="
+        echo "📝 KIỂM TRA MAINACTIVITY.KT"
+        echo "========================================="
+        grep -n "private fun setupChatUI\|protected override fun setupChatUI\|private fun addChatMessage\|protected override fun addChatMessage\|backgroundColor\|setBackgroundColor" duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/MainActivity.kt || echo "Không tìm thấy mẫu cần kiểm tra"
 
     # ===== UPLOAD CÁC FILE ĐÃ SỬA =====
     - name: "📤 Upload Modified Kotlin Files"
@@ -213,6 +277,14 @@ jobs:
         if-no-files-found: warn
 
     # ===== UPLOAD APK NẾU BUILD THÀNH CÔNG =====
+    - name: "📦 Find APK Files"
+      if: env.BUILD_FAILED != 'true'
+      run: |
+        echo "========================================="
+        echo "📦 TÌM TẤT CẢ FILE APK:"
+        echo "========================================="
+        find duix-android -name "*.apk" -type f -exec ls -lh {} \; || echo "❌ Không tìm thấy file APK nào"
+
     - name: "📤 Upload APK"
       if: env.BUILD_FAILED != 'true'
       uses: actions/upload-artifact@v4
@@ -221,18 +293,10 @@ jobs:
         path: duix-android/dh_aigc_android/**/build/outputs/apk/**/*.apk
         if-no-files-found: warn
 
-    # ===== NẾU LỖI, UPLOAD BUILD LOG =====
-    - name: "📤 Upload Build Log On Failure"
-      if: env.BUILD_FAILED == 'true'
-      run: |
-        cd duix-android/dh_aigc_android
-        ./gradlew assembleDebug --info > build_log.txt 2>&1 || true
-        echo "📋 Xem 50 dòng cuối của log:"
-        tail -n 50 build_log.txt
-      
+    # ===== UPLOAD BUILD LOG =====
     - name: "📤 Upload Build Log"
-      if: env.BUILD_FAILED == 'true'
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: build-log
-        path: duix-android/dh_aigc_android/build_log.txt
+        path: duix-android/dh_aigc_android/build_output.log
