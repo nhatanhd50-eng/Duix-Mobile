@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
@@ -22,27 +22,25 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+    # Nếu không có gradlew, tự động tạo
+    - name: Generate Gradle Wrapper
+      run: |
+        if [ ! -f gradlew ]; then
+          echo "gradlew not found, generating..."
+          # Tải Gradle 8.7 và tạo wrapper
+          wget https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          unzip gradle-8.7-bin.zip
+          export GRADLE_HOME=$(pwd)/gradle-8.7
+          export PATH=$PATH:$GRADLE_HOME/bin
+          gradle wrapper --gradle-version 8.7
+        fi
+        chmod +x gradlew
 
     - name: Build Debug APK
       run: ./gradlew assembleDebug --no-daemon
-
-    - name: Build Release APK (if signing keys provided)
-      run: ./gradlew assembleRelease --no-daemon
-      env:
-        SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-        SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-        SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
 
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
         name: debug-apk
         path: app/build/outputs/apk/debug/app-debug.apk
-
-    - name: Upload Release APK (if exists)
-      uses: actions/upload-artifact@v4
-      with:
-        name: release-apk
-        path: app/build/outputs/apk/release/app-release.apk
