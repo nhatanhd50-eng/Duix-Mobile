@@ -229,3 +229,51 @@ public class DUIX {
         }
     }
 }
+    // --- INTEGRATED CEREBRAS API (VỚI KEY CỦA BẠN) ---
+    public void askCerebras(final String text) {
+        new Thread(() -> {
+            try {
+                URL url = new URL("https://api.cerebras.ai/v1/chat/completions");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                
+                // --- ĐÃ CÀI ĐẶT KEY VÀ MODEL ---
+                conn.setRequestProperty("Authorization", "Bearer csk-tmj9882rd95p388jedk9632nk4f99hdmkcjc5rrp3nptp8fe");
+                
+                conn.setDoOutput(true);
+
+                // Model bạn chọn: zai-glm-4.7
+                String jsonInputString = "{\"model\": \"zai-glm-4.7\", \"messages\": [{\"role\": \"user\", \"content\": \"" + text + "\"}], \"stream\": false}";
+
+                try(OutputStream os = conn.getOutputStream()) {
+                    byte[] input = jsonInputString.getBytes("utf-8");
+                    os.write(input, 0, input.length);
+                }
+
+                int responseCode = conn.getResponseCode();
+                if (responseCode == 200) {
+                    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), "utf-8"));
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+                    
+                    String content = parseJsonContent(response.toString());
+                    
+                    // In log ra để kiểm tra
+                    Log.i("DUIX_AI", "Cerebras Response: " + content);
+                    
+                    // Gửi kết quả về callback
+                    if (mCallback != null){
+                        mCallback.onEvent("cerebras.response", content, null);
+                    }
+                } else {
+                    Log.e("DUIX_AI", "Error code: " + responseCode);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
+    }
