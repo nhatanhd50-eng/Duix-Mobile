@@ -1,4 +1,4 @@
-name: Build & Show Errors Directly
+name: Build & Show Last 200 Lines (Fixed Debug)
 
 on:
   push:
@@ -19,43 +19,39 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # 1. CÀI ĐẶT GRADLE (Bản 8.5 cho an toàn)
+      # 1. CÀI ĐẶT GRADLE 8.5
       - name: Setup Gradle Manually
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O gradle.zip
           unzip -q gradle.zip
           echo "$(pwd)/gradle-8.5/bin" >> $GITHUB_PATH
 
-      # 2. CHẠY BUILD & GHI LOG RA FILE (Không in rác ra màn hình)
+      # 2. CHẠY BUILD & GHI LOG
       - name: Build Debug APK
         id: build_step
         run: |
           cd duix-android/dh_aigc_android
           echo "🚀 Building... (Please wait)"
           
-          # Lưu toàn bộ log vào file để lọc sau
+          # Lưu log vào file build_log.txt
           gradle assembleDebug --no-daemon --stacktrace --info > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
 
-      # 3. LỌC VÀ HIỂN THỊ LỖI NGAY LẬP TỨC (Đây là bước bạn cần)
-      - name: 🔴 SHOW BUILD ERRORS
+      # 3. HIỂN THỊ 200 DÒNG CUỐI (Nơi chứa lỗi thực sự)
+      - name: 🔴 SHOW REAL ERROR (Last 200 lines)
         if: env.BUILD_FAILED == 'true'
         run: |
           cd duix-android/dh_aigc_android
           echo "========================================================="
-          echo "🔥 PHÁT HIỆN LỖI (ERRORS DETECTED) - COPY ĐOẠN DƯỚI ĐÂY 🔥"
+          echo "👇 ĐÂY MỚI LÀ LỖI (LAST 200 LINES) - COPY ĐOẠN NÀY 👇"
           echo "========================================================="
           
-          # Dùng grep để tìm các từ khóa lỗi và in ra 10 dòng xung quanh nó
-          # -n: hiện số dòng
-          # -C 10: hiện 10 dòng context trước và sau lỗi để dễ hiểu ngữ cảnh
-          # -E: tìm nhiều từ khóa cùng lúc
-          grep -n -C 10 -E "(FAILURE:|FAILED|Exception|error|What went wrong:|Caused by:)" build_log.txt
+          # In 200 dòng cuối cùng của file log, nơi Gradle báo lỗi tổng hợp
+          tail -n 200 build_log.txt
           
           echo "========================================================="
-          echo "❌ Quy trình sẽ dừng tại đây. Hãy sửa lỗi trên."
           exit 1
 
-      # 4. UPLOAD APK (Chỉ chạy nếu KHÔNG có lỗi)
+      # 4. UPLOAD APK (Nếu thành công)
       - name: Upload APK
         if: env.BUILD_FAILED != 'true'
         uses: actions/upload-artifact@v4
