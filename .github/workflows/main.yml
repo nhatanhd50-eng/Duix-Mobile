@@ -1,4 +1,4 @@
-name: Build APK Upload Everything
+name: Build APK Find Error
 
 on: 
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Source Code
+    - name: Checkout
       uses: actions/checkout@v4
       with:
         repository: nhatanhd50-eng/Duix-Mobile
@@ -23,10 +23,7 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Accept Licenses
-      run: yes | sdkmanager --licenses || true
-
-    - name: Install CMake 3.18.1
+    - name: Install CMake
       run: |
         wget -q https://github.com/Kitware/CMake/releases/download/v3.18.1/cmake-3.18.1-Linux-x86_64.tar.gz
         tar -xzf cmake-3.18.1-Linux-x86_64.tar.gz
@@ -34,18 +31,15 @@ jobs:
         cp -r cmake-3.18.1-Linux-x86_64/* $ANDROID_HOME/cmake/3.18.1/
 
     - name: Install NDK
-      run: |
-        sdkmanager "ndk;25.2.9519653"
+      run: sdkmanager "ndk;25.2.9519653"
 
     - name: Setup Gradlew
       run: |
         cd duix-android/dh_aigc_android
         rm -rf gradlew gradlew.bat gradle/
         mkdir -p gradle/wrapper
-        
         curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradlew -o gradlew
         curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-        
         cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
         distributionBase=GRADLE_USER_HOME
         distributionPath=wrapper/dists
@@ -54,7 +48,6 @@ jobs:
         zipStoreBase=GRADLE_USER_HOME
         zipStorePath=wrapper/dists
         EOF
-        
         chmod +x gradlew
 
     - name: Create local.properties
@@ -66,57 +59,65 @@ jobs:
         cmake.dir=$ANDROID_HOME/cmake/3.18.1
         EOF
 
-    - name: Build APK
+    # TÌM LỖI BẰNG CÁCH LỌC LOG
+    - name: "🔍 BUILD VÀ TÌM LỖI"
       run: |
         cd duix-android/dh_aigc_android
-        ./gradlew assembleDebug --stacktrace --no-daemon
-      continue-on-error: true
+        set +e
+        
+        echo "🚀 Bắt đầu build với filter lỗi..."
+        ./gradlew assembleDebug --stacktrace 2>&1 | tee full_build.log
+        
+        BUILD_EXIT_CODE=${PIPESTATUS[0]}
+        
+        echo ""
+        echo "========================================="
+        echo "📊 KẾT QUẢ BUILD: Exit Code = $BUILD_EXIT_CODE"
+        echo "========================================="
+        
+        if [ $BUILD_EXIT_CODE -ne 0 ]; then
+          echo ""
+          echo "========================================="
+          echo "🔴 CÁC DÒNG CÓ 'FAILED':"
+          echo "========================================="
+          grep -i "FAILED" full_build.log || echo "Không tìm thấy"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 CÁC DÒNG CÓ 'ERROR':"
+          echo "========================================="
+          grep -i "ERROR" full_build.log | head -20 || echo "Không tìm thấy"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 CÁC DÒNG CÓ 'Exception':"
+          echo "========================================="
+          grep -i "Exception" full_build.log | head -20 || echo "Không tìm thấy"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 500 DÒNG TRƯỚC 'BUILD FAILED':"
+          echo "========================================="
+          # Tìm vị trí BUILD FAILED và lấy 500 dòng trước đó
+          grep -B 500 "BUILD FAILED" full_build.log | tail -200 || tail -500 full_build.log
+        fi
+        
+        exit $BUILD_EXIT_CODE
 
-    # TÌM MỌI FILE (QUAN TRỌNG!)
-    - name: Find Everything Built
-      if: always()
+    # BUILD LẠI VỚI WARNING MODE
+    - name: "🔍 CHẠY LẠI VỚI WARNING MODE"
+      if: failure()
       run: |
         cd duix-android/dh_aigc_android
-        
         echo "========================================="
-        echo "🔍 TÌM TẤT CẢ FILE .APK:"
+        echo "📋 CHẠY VỚI --warning-mode all"
         echo "========================================="
-        find . -name "*.apk" -type f -exec ls -lh {} \; || echo "❌ KHÔNG CÓ APK"
-        
-        echo ""
-        echo "========================================="
-        echo "🔍 TÌM TẤT CẢ FILE .AAB:"
-        echo "========================================="
-        find . -name "*.aab" -type f -exec ls -lh {} \; || echo "❌ KHÔNG CÓ AAB"
-        
-        echo ""
-        echo "========================================="
-        echo "📁 KIỂM TRA THU MỤC app/build:"
-        echo "========================================="
-        ls -laR app/build/ 2>/dev/null || echo "❌ KHÔNG CÓ THƯ MỤC app/build"
-        
-        echo ""
-        echo "========================================="
-        echo "📁 TÌM MỌI THƯ MỤC 'outputs':"
-        echo "========================================="
-        find . -type d -name "outputs" 2>/dev/null || echo "❌ KHÔNG CÓ THƯ MỤC outputs"
+        ./gradlew assembleDebug --warning-mode all 2>&1 | grep -A5 -B5 -i "deprecated\|warning\|error" | head -100 || true
 
-    # UPLOAD TOÀN BỘ THƯ MỤC BUILD
-    - name: Upload Entire Build Directory
+    - name: Upload Full Log
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: complete-build-folder
-        path: duix-android/dh_aigc_android/app/build/
-        if-no-files-found: warn
-
-    # UPLOAD MỌI FILE APK/AAB TÌM ĐƯỢC
-    - name: Upload APK/AAB
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: apk-aab-files
-        path: |
-          duix-android/**/*.apk
-          duix-android/**/*.aab
-        if-no-files-found: warn
+        name: full-build-log
+        path: duix-android/dh_aigc_android/full_build.log
+        if-no-files-found: ignore
