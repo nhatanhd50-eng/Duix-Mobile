@@ -1,4 +1,4 @@
-name: Build APK - Find and Upload
+name: Build APK With Clear Error Logging
 
 on: 
   workflow_dispatch:
@@ -75,109 +75,110 @@ jobs:
         EOF
         chmod +x gradlew
 
-    # ===== CHECK PROJECT STRUCTURE =====
-    - name: "📋 Kiểm Tra Cấu Trúc Project"
+    # BUILD WITH LOG CAPTURE
+    - name: "🚀 Build với Output Log"
+      id: build
       run: |
         cd duix-android/dh_aigc_android
-        echo "========================================="
-        echo "📋 MODULE NÀO TẠO APK?"
-        echo "========================================="
+        ./gradlew assembleDebug --info > build_output.log 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
         
-        echo "📝 settings.gradle:"
-        cat settings.gradle || cat settings.gradle.kts || echo "Không tìm thấy"
-        
-        echo ""
-        echo "📝 Xem module app có tạo application không:"
-        grep -E "apply plugin: 'com.android.application'|plugins \{.*application.*\}" app/build.gradle || echo "Không phải application"
-        
-        echo ""
-        echo "📝 Xem module test có tạo application không:"
-        grep -E "apply plugin: 'com.android.application'|plugins \{.*application.*\}" test/build.gradle || echo "Không phải application"
+        # Lưu exit code
+        echo "BUILD_EXIT_CODE=$?" >> $GITHUB_ENV
+      continue-on-error: true
 
-    # ===== BUILD ALL MODULES =====
-    - name: "🚀 Build Tất Cả Modules"
+    # ===== STEP IN LOG LỖI (QUAN TRỌNG!) =====
+    - name: "🔴 IN LOG LỖI CHI TIẾT"
+      if: always()
       run: |
         cd duix-android/dh_aigc_android
-        ./gradlew build --stacktrace
+        
+        echo "========================================="
+        echo "📊 KẾT QUẢ BUILD"
+        echo "========================================="
+        
+        if [ "$BUILD_FAILED" != "true" ]; then
+          echo "✅ BUILD THÀNH CÔNG!"
+        else
+          echo "❌ BUILD THẤT BẠI! (Exit code: $BUILD_EXIT_CODE)"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 TASK FAILED:"
+          echo "========================================="
+          grep "> Task.*FAILED" build_output.log || echo "Không tìm thấy task failed"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 ERROR MESSAGES:"
+          echo "========================================="
+          grep -A3 "What went wrong:" build_output.log || echo "Không tìm thấy mục What went wrong"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 KOTLIN ERRORS:"
+          echo "========================================="
+          grep -E "e: .*\.kt:" build_output.log | head -20 || echo "Không tìm thấy lỗi Kotlin"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 BUILD ERRORS:"
+          echo "========================================="
+          grep -E "Execution failed for task|error:" build_output.log | grep -v "at " | head -10 || echo "Không tìm thấy lỗi build cụ thể"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 EXCEPTION DETAILS:"
+          echo "========================================="
+          grep -A15 "Exception is:" build_output.log || echo "Không tìm thấy exception details"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 FULL ERROR STACKTRACE:"
+          echo "========================================="
+          grep -A30 "FAILURE:" build_output.log || echo "Không tìm thấy FAILURE section"
+          
+          echo ""
+          echo "========================================="
+          echo "🔴 100 DÒNG CUỐI CỦA LOG:"
+          echo "========================================="
+          tail -n 100 build_output.log
+        fi
 
-    # ===== TÌM KIẾM APK Ở NHIỀU NƠI =====
-    - name: "🔍 Tìm APK Ở MỌI NƠI"
+    # FIND APK FILES
+    - name: "🔍 Tìm APK Sau Build"
       if: always()
       run: |
         echo "========================================="
-        echo "🔍 TÌM TẤT CẢ FILE APK TRONG WORKSPACE:"
+        echo "🔍 TÌM TẤT CẢ FILE APK:"
         echo "========================================="
-        find . -name "*.apk" -type f -exec ls -lh {} \; || echo "❌ Không tìm thấy file APK nào"
+        find . -name "*.apk" -type f -exec ls -lh {} \; || echo "❌ Không tìm thấy APK"
         
         echo ""
         echo "========================================="
-        echo "📁 Xem outputs Của Module app:"
+        echo "📁 KIỂM TRA THƯ MỤC BUILD/OUTPUTS:"
         echo "========================================="
-        ls -la duix-android/dh_aigc_android/app/build/outputs/ 2>/dev/null || echo "Không có thư mục outputs"
-        
-        echo ""
-        echo "========================================="
-        echo "📁 Xem outputs Của Module test:"
-        echo "========================================="
-        ls -la duix-android/dh_aigc_android/test/build/outputs/ 2>/dev/null || echo "Không có thư mục outputs"
-        
-        echo ""
-        echo "========================================="
-        echo "📁 Tìm Tất Cả Thư Mục outputs:"
-        echo "========================================="
-        find . -name "outputs" -type d -exec ls -la {} \; 2>/dev/null || echo "Không có thư mục outputs"
-        
-        echo ""
-        echo "========================================="
-        echo "📁 Xem intermediate Của Module app:"
-        echo "========================================="
-        find duix-android/dh_aigc_android/app/build -name "intermediate" -type d -exec ls -la {} \; 2>/dev/null || echo "Không có thư mục intermediate"
+        find duix-android -name "outputs" -type d | xargs ls -la 2>/dev/null || echo "❌ Không tìm thấy thư mục outputs"
 
-    # ===== THỬ BUILD RIÊNG APP MODULE =====
-    - name: "🚀 Build Riêng Module app"
+    # BUILD SKIP LINTING
+    - name: "🚀 Thử Build Bỏ Qua Linting"
+      if: env.BUILD_FAILED == 'true'
       run: |
         cd duix-android/dh_aigc_android
-        ./gradlew :app:assembleDebug --stacktrace
-
-    # ===== THỬ BUILD RIÊNG TEST MODULE =====
-    - name: "🚀 Build Riêng Module test"
-      run: |
-        cd duix-android/dh_aigc_android
-        ./gradlew :test:assembleDebug --stacktrace
-
-    # ===== TÌM LẠI APK SAU BUILD RIÊNG =====
-    - name: "🔍 Tìm Lại APK Sau Build Riêng"
-      if: always()
-      run: |
         echo "========================================="
-        echo "🔍 TÌM LẠI TẤT CẢ FILE APK:"
+        echo "🔄 THỬ BUILD BỎ QUA LINTING"
         echo "========================================="
-        find . -name "*.apk" -type f -exec ls -lh {} \;
-        
-        # Lưu danh sách APK vào file
-        find . -name "*.apk" -type f > apk_list.txt
+        ./gradlew assembleDebug -x lint -x lintVitalRelease --stacktrace
 
-    # ===== UPLOAD APK =====
-    - name: "📤 Upload Tất Cả APK"
+    # UPLOAD LOG FOR INVESTIGATION
+    - name: "📤 Upload Build Log"
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: all-apk-files
-        path: |
-          **/*.apk
-        if-no-files-found: warn
-        
-    # ===== UPLOAD APK LIST =====
-    - name: "📤 Upload Danh Sách APK"
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: apk-list
-        path: apk_list.txt
-        if-no-files-found: warn
+        name: build-log
+        path: duix-android/dh_aigc_android/build_output.log
 
-    # ===== UPLOAD MODIFIED FILES =====
-    - name: "📤 Upload Modified Kotlin Files"
+    # UPLOAD MODIFIED FILES
+    - name: "📤 Upload Modified Files"
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -185,4 +186,14 @@ jobs:
         path: |
           duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt
           duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/MainActivity.kt
+        if-no-files-found: warn
+
+    # UPLOAD ANY APK FOUND
+    - name: "📤 Upload All APKs"
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: all-apks
+        path: |
+          **/*.apk
         if-no-files-found: warn
