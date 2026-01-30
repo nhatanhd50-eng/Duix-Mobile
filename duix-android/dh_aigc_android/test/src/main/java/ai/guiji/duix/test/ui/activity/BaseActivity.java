@@ -1,18 +1,12 @@
 package ai.guiji.duix.test.ui.activity;
 
 import android.content.pm.PackageManager;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
-import android.media.AudioManager;
-import android.media.MediaPlayer;
-import android.media.SoundPool;
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
-import android.os.Looper;
 import android.os.Message;
-import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -23,8 +17,6 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
-import android.graphics.Color;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -35,10 +27,8 @@ import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 import ai.guiji.duix.sdk.client.DUIX;
-import ai.guiji.duix.sdk.client.render.RenderSink;
 
 public abstract class BaseActivity extends AppCompatActivity implements Handler.Callback {
 
@@ -49,12 +39,11 @@ public abstract class BaseActivity extends AppCompatActivity implements Handler.
     // --- BIẾN GIAO DIỆN CHAT ---
     protected EditText inputText;
     protected Button btnSend;
-    protected LinearLayout chatContainer; // Danh sách tin nhắn
-    protected ScrollView scrollView; // ScrollView để cuộn
-    protected DUIX duix; // Biến DUIX dùng chung
-
-    // --- TTS ENGINE ---
-    protected TextToSpeech ttsEngine;
+    protected LinearLayout chatContainer;
+    protected ScrollView scrollView;
+    
+    // Biến DUIX (Avatar Engine) - sẽ được gán giá trị ở MainActivity
+    protected DUIX duix; 
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -63,163 +52,107 @@ public abstract class BaseActivity extends AppCompatActivity implements Handler.
         HandlerThread mHandlerThread = new HandlerThread(TAG);
         mHandlerThread.start();
         mHandler = new Handler(mHandlerThread.getLooper(), this);
-
-        // Khởi tạo TTS Engine
-        ttsEngine = new TextToSpeech(this, status -> {
-            if (status == TextToSpeech.SUCCESS) {
-                int result = ttsEngine.setLanguage(Locale.US);
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.e(TAG, "TTS Language not supported");
-                } else {
-                    Log.d(TAG, "TTS Initialized successfully");
-                }
-            } else {
-                Log.e(TAG, "TTS Initialization failed");
-            }
-        });
+        keepScreenOn();
     }
 
     /**
-     * GỌI HÀM NÀY Ở CÁC LỚP CON (MainActivity, CallActivity)
-     * NÓ SẼ TỰ ĐỘNG VẼ GIAO DIỆN CHAT
+     * GỌI HÀM NÀY Ở MainActivity để vẽ khung chat đè lên Avatar
      */
     protected void setupChatUI() {
-        // 1. Layout chính (Dọc)
-        LinearLayout rootLayout = new LinearLayout(this);
-        rootLayout.setOrientation(LinearLayout.VERTICAL);
-        rootLayout.setBackgroundColor(Color.parseColor("#121212")); // Nền tối
+        // Layout bao ngoài (trong suốt để nhìn thấy Avatar bên dưới)
+        LinearLayout overlayLayout = new LinearLayout(this);
+        overlayLayout.setOrientation(LinearLayout.VERTICAL);
+        overlayLayout.setBackgroundColor(Color.TRANSPARENT); // Trong suốt
+        overlayLayout.setGravity(Gravity.BOTTOM); // Đẩy khung chat xuống dưới
 
-        // 2. Danh sách tin nhắn (Chat History)
+        // 1. ScrollView chứa lịch sử chat (Chiếm phần trên)
         scrollView = new ScrollView(this);
-        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            0,
-            1.0f // Chiếm phần lớn màn hình
-        ));
+            0, 
+            1.0f 
+        );
+        scrollParams.setMargins(20, 100, 20, 20); // Cách lề để đẹp hơn
+        scrollView.setLayoutParams(scrollParams);
         scrollView.setBackgroundColor(Color.TRANSPARENT);
 
         chatContainer = new LinearLayout(this);
         chatContainer.setOrientation(LinearLayout.VERTICAL);
-        chatContainer.setPadding(20, 20, 20, 20);
-        chatContainer.setGravity(Gravity.BOTTOM);
-
         scrollView.addView(chatContainer);
-        rootLayout.addView(scrollView);
 
-        // 3. Khung nhập liệu (Input Box)
+        // 2. Khung nhập liệu (Ở dưới cùng)
         LinearLayout inputLayout = new LinearLayout(this);
         inputLayout.setOrientation(LinearLayout.HORIZONTAL);
-        inputLayout.setGravity(Gravity.CENTER_VERTICAL);
-        inputLayout.setPadding(20, 15, 20, 15);
-        inputLayout.setBackgroundColor(Color.parseColor("#2C2C2C"));
+        inputLayout.setPadding(20, 20, 20, 20);
+        inputLayout.setBackgroundColor(Color.parseColor("#80000000")); // Đen bán trong suốt
 
-        // Ô nhập Text
         inputText = new EditText(this);
-        inputText.setHint("Nhập tin nhắn...");
-        inputText.setBackgroundColor(Color.TRANSPARENT);
+        inputText.setHint("Hỏi gì đó...");
         inputText.setTextColor(Color.WHITE);
-        inputText.setHintTextColor(Color.GRAY);
-        inputText.setPadding(15, 15, 15, 15);
-        inputText.setTextSize(14f);
-        LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(
-            0,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            1.0f
-        );
-        editParams.setMargins(0, 0, 10, 0);
-        inputLayout.addView(inputText, editParams);
+        inputText.setHintTextColor(Color.LTGRAY);
+        inputText.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        inputLayout.addView(inputText, textParams);
 
-        // Nút Gửi
         btnSend = new Button(this);
         btnSend.setText("Gửi");
-        btnSend.setBackgroundColor(Color.parseColor("#00BCD4"));
+        btnSend.setBackgroundColor(Color.BLUE);
         btnSend.setTextColor(Color.WHITE);
-        btnSend.setPadding(20, 10, 20, 10);
-        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        inputLayout.addView(btnSend, btnParams);
+        inputLayout.addView(btnSend);
 
-        // Thêm input layout vào root
-        rootLayout.addView(inputLayout);
+        // Ghép các phần lại
+        overlayLayout.addView(scrollView);
+        overlayLayout.addView(inputLayout);
 
-        // Hiển thị giao diện
-        setContentView(rootLayout);
+        // Thêm overlay vào Activity hiện tại
+        addContentView(overlayLayout, new ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ));
 
-        // Sự kiện nhấn nút gửi
+        // Xử lý sự kiện gửi
         btnSend.setOnClickListener(v -> {
-            String userText = inputText.getText().toString().trim();
-            if (!userText.isEmpty()) {
-                addChatMessage(userText, true); // Tin nhắn người dùng
-                inputText.setText(""); // Xóa ô input
-                processUserInput(userText); // Gửi tới LLM
+            String text = inputText.getText().toString().trim();
+            if (!text.isEmpty()) {
+                // 1. Hiện tin nhắn của mình
+                addChatMessage("Bạn: " + text, true);
+                inputText.setText("");
+
+                // 2. Gửi lệnh cho Avatar (AI + TTS + LipSync)
+                if (duix != null) {
+                    duix.askAndSpeak(text);
+                } else {
+                    addChatMessage("Lỗi: Avatar chưa sẵn sàng!", false);
+                }
             }
         });
     }
 
-    /**
-     * GỬI INPUT CHO LLM VÀ NHẬN KẾT QUẢ
-     * @param userInput Văn bản người dùng nhập
-     */
-    protected void processUserInput(String userInput) {
-        // TODO: Gọi API LLM ở đây (OpenAI, Claude, v.v.)
-        // Ví dụ giả lập trả lời sau 1 giây
-        mHandler.postDelayed(() -> {
-            String aiResponse = "Tôi đã nhận được câu hỏi: \"" + userInput + "\". Đây là phản hồi từ AI.";
-            addChatMessage(aiResponse, false); // Tin nhắn AI
-            speakText(aiResponse); // Phát âm thanh qua TTS
-        }, 1000);
-    }
-
-    /**
-     * PHÁT ÂM THANH QUA TTS ENGINE
-     * @param text Văn bản cần phát
-     */
-    protected void speakText(String text) {
-        if (ttsEngine != null) {
-            ttsEngine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "TTS_UTTERANCE_ID");
-        }
-    }
-
-    /**
-     * HÀM THÊM TIN NHẮN VÀO KHUNG CHAT
-     * @param text Nội dung tin nhắn
-     * @param isMine true = tin nhắn của bạn (bên phải), false = tin nhắn AI (bên trái)
-     */
-    protected void addChatMessage(String text, boolean isMine) {
-        runOnUiThread(() -> { // Đảm bảo chạy trên UI thread
-            if (chatContainer == null) return;
-
-            // Layout 1 tin nhắn
-            LinearLayout msgWrapper = new LinearLayout(this);
-            msgWrapper.setOrientation(LinearLayout.HORIZONTAL);
-            msgWrapper.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
+    protected void addChatMessage(String msg, boolean isUser) {
+        runOnUiThread(() -> {
+            TextView tv = new TextView(this);
+            tv.setText(msg);
+            tv.setTextColor(Color.WHITE);
+            tv.setPadding(20, 10, 20, 10);
+            tv.setTextSize(16f);
+            
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, 
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ));
-            msgWrapper.setGravity(isMine ? Gravity.END : Gravity.START); // END = phải, START = trái
-            msgWrapper.setPadding(0, 0, 0, 10);
-
-            // Bong bóng chat
-            TextView msgBubble = new TextView(this);
-            msgBubble.setText(text);
-            msgBubble.setTextSize(15f);
-            msgBubble.setTextColor(Color.WHITE);
-            msgBubble.setPadding(20, 15, 20, 15);
-
-            if (isMine) {
-                msgBubble.setBackgroundColor(Color.parseColor("#00BCD4")); // Xanh dương
-                msgBubble.setGravity(Gravity.END);
+            );
+            params.setMargins(0, 5, 0, 5);
+            
+            if (isUser) {
+                tv.setBackgroundColor(Color.parseColor("#007AFF")); // Xanh
+                params.gravity = Gravity.END;
             } else {
-                msgBubble.setBackgroundColor(Color.parseColor("#3E3E3E")); // Xám
-                msgBubble.setGravity(Gravity.START);
+                tv.setBackgroundColor(Color.parseColor("#333333")); // Xám
+                params.gravity = Gravity.START;
             }
-
-            msgWrapper.addView(msgBubble);
-            chatContainer.addView(msgBubble);
-
-            // Tự động cuộn xuống cuối
+            tv.setLayoutParams(params);
+            
+            chatContainer.addView(tv);
+            // Cuộn xuống cuối
             scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
         });
     }
@@ -227,17 +160,7 @@ public abstract class BaseActivity extends AppCompatActivity implements Handler.
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        Log.i(TAG, "onDestroy");
-
-        // Giải phóng TTS
-        if (ttsEngine != null) {
-            ttsEngine.stop();
-            ttsEngine.shutdown();
-        }
-
-        if (mHandler != null && mHandler.getLooper() != null) {
-            mHandler.getLooper().quitSafely();
-        }
+        if (mHandler != null) mHandler.getLooper().quitSafely();
     }
 
     @Override
@@ -246,14 +169,13 @@ public abstract class BaseActivity extends AppCompatActivity implements Handler.
         return false;
     }
 
-    // try abstract
     protected void onMessage(@NonNull Message msg) {}
 
     protected void keepScreenOn() {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
-    // --- PHẦN XỬ LÝ PERMISSION ---
+    // --- PERMISSION HELPER ---
     private String[] mRequestPermissions;
     private int mRequestPermissionCode;
     ActivityResultLauncher<String[]> permissionLauncher = registerForActivityResult(
@@ -261,40 +183,26 @@ public abstract class BaseActivity extends AppCompatActivity implements Handler.
         result -> {
             boolean hasDeny = false;
             for (String permission : mRequestPermissions) {
-                if (null == permission) continue;
-                if (ContextCompat.checkSelfPermission(mContext, permission) != PackageManager.PERMISSION_GRANTED) {
+                if (permission != null && ContextCompat.checkSelfPermission(mContext, permission) != PackageManager.PERMISSION_GRANTED) {
                     hasDeny = true;
                 }
             }
-            if (hasDeny) {
-                permissionsGet(false, mRequestPermissionCode);
-            } else {
-                permissionsGet(true, mRequestPermissionCode);
-            }
+            permissionsGet(!hasDeny, mRequestPermissionCode);
         });
 
     public void requestPermission(String[] permissions, int code) {
-        if (null == permissions) {
-            permissionsGet(true, code);
-            return;
-        }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        if (permissions == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             permissionsGet(true, code);
             return;
         }
         mRequestPermissions = permissions;
         mRequestPermissionCode = code;
-        List<String> requestPermissions = new ArrayList<>();
-        for (String permission : permissions) {
-            if (ContextCompat.checkSelfPermission(mContext, permission) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions.add(permission);
-            }
+        List<String> list = new ArrayList<>();
+        for (String p : permissions) {
+            if (ContextCompat.checkSelfPermission(mContext, p) != PackageManager.PERMISSION_GRANTED) list.add(p);
         }
-        if (!requestPermissions.isEmpty()) {
-            permissionLauncher.launch(requestPermissions.toArray(new String[0]));
-        } else {
-            permissionsGet(true, mRequestPermissionCode);
-        }
+        if (!list.isEmpty()) permissionLauncher.launch(list.toArray(new String[0]));
+        else permissionsGet(true, mRequestPermissionCode);
     }
 
     public void permissionsGet(boolean get, int code) {}
