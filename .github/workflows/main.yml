@@ -1,4 +1,4 @@
-name: Build APK Final Manual Gradle
+name: Build APK Final CMake Fix
 
 on: 
   workflow_dispatch:
@@ -26,45 +26,53 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # Bước 4: Cài Gradle 8.3 ở THƯ MỤC RIÊNG (không trong project)
-    - name: Install Gradle 8.3 Separately
+    # Bước 4: Cài thủ công CMake 3.18.1 (BẮT BUỘC - Dự án ép dùng bản này)
+    - name: Install CMake 3.18.1
       run: |
-        echo "📥 Tải Gradle 8.3 vào /tmp (ngoài project)..."
-        cd /tmp
-        wget -q https://services.gradle.org/distributions/gradle-8.3-bin.zip
-        unzip -q gradle-8.3-bin.zip
+        # Tải file CMake 3.18.1 cho Linux
+        wget https://github.com/Kitware/CMake/releases/download/v3.18.1/cmake-3.18.1-Linux-x86_64.tar.gz
         
-        echo "✅ Gradle 8.3 đã cài tại /tmp/gradle-8.3"
-        /tmp/gradle-8.3/bin/gradle --version
+        # Giải nén
+        tar -xzf cmake-3.18.1-Linux-x86_64.tar.gz
+        
+        # Tạo thư mục đích trong SDK Android (Đây là nơi Android Build Engine tìm kiếm)
+        mkdir -p $ANDROID_HOME/cmake/3.18.1
+        
+        # Di chuyển file CMake vừa tải vào đúng chỗ đó
+        cp -r cmake-3.18.1-Linux-x86_64/* $ANDROID_HOME/cmake/3.18.1/
+        
+        echo "Đã cài đặt CMake 3.18.1 vào $ANDROID_HOME/cmake/3.18.1"
+        ls -l $ANDROID_HOME/cmake/3.18.1/bin/cmake
 
-    # Bước 5: Tạo Gradle Wrapper trong project
-    - name: Create Gradle Wrapper
+    # Bước 5: Setup Gradlew (Giữ nguyên cách làm tốt nhất ở bước trước)
+    - name: Restore Gradlew Manually
       run: |
         cd duix-android/dh_aigc_android
-        
-        echo "🧹 Xóa gradle cũ..."
         rm -rf gradlew gradlew.bat gradle/
+        mkdir -p gradle/wrapper
         
-        echo "🔧 Tạo wrapper (dùng Gradle từ /tmp)..."
-        /tmp/gradle-8.3/bin/gradle wrapper --gradle-version 8.3
+        curl -L https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradlew -o gradlew
+        curl -L https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+        
+        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.3-bin.zip
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
+        EOF
         
         chmod +x gradlew
-        
-        echo "✅ Kiểm tra wrapper:"
-        cat gradle/wrapper/gradle-wrapper.properties
 
-    # Bước 6: Build
+    # Bước 6: Build (Lần này có đủ Java 17, Gradle 8.3 và CMake 3.18.1)
     - name: Build with Gradle
       run: |
         cd duix-android/dh_aigc_android
-        echo "🔍 Gradle version:"
-        ./gradlew --version
-        echo "🚀 Building..."
         ./gradlew assembleDebug --stacktrace
 
     # Bước 7: Upload APK
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Duix-Mobile-APK
+        name: Duix-Mobile-Complete-APK
         path: '**/*.apk'
