@@ -1,4 +1,4 @@
-name: Manual Install Gradle & Deep Debug (Fixed)
+name: Build & Show Errors Directly
 
 on:
   push:
@@ -13,81 +13,52 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Change to Android project dir
-        run: |
-          cd duix-android/dh_aigc_android
-          pwd
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-      # 1. TẢI GRADLE THỦ CÔNG (Để có môi trường chạy lệnh wrapper)
+      # 1. CÀI ĐẶT GRADLE (Bản 8.5 cho an toàn)
       - name: Setup Gradle Manually
-        id: setup_gradle
         run: |
-          echo "Downloading Gradle 8.5 (Stable)..." 
-          # Mình hạ xuống 8.5 để an toàn hơn, 9.x rất mới dễ lỗi với project cũ
           wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O gradle.zip
           unzip -q gradle.zip
           echo "$(pwd)/gradle-8.5/bin" >> $GITHUB_PATH
-          echo "Gradle setup complete."
 
-      # 2. TẠO LẠI WRAPPER (Thêm log chi tiết & --stacktrace)
-      - name: Regenerate Gradle Wrapper
-        id: regen_wrapper
-        run: |
-          cd duix-android/dh_aigc_android
-          
-          echo "Removing broken wrapper..."
-          rm -rf gradle/wrapper/gradle-wrapper.jar
-          
-          echo "Attempting to regenerate wrapper..."
-          # QUAN TRỌNG: Thêm --stacktrace và ghi log vào wrapper_error.txt
-          # Nếu lệnh này fail, biến WRAPPER_FAILED sẽ được bật
-          gradle wrapper --gradle-version 9.0 --distribution-type bin --stacktrace --info > wrapper_error.txt 2>&1 || echo "WRAPPER_FAILED=true" >> $GITHUB_ENV
-        continue-on-error: true
-
-      # 3. IN LOG LỖI WRAPPER (Cái bạn đang thiếu)
-      - name: Print Wrapper Generation Error
-        if: env.WRAPPER_FAILED == 'true'
-        run: |
-          cd duix-android/dh_aigc_android
-          echo "❌ FAILED TO GENERATE WRAPPER!"
-          echo "👇 BELOW IS THE ERROR LOG (CHECK YOUR BUILD.GRADLE) 👇"
-          echo "====================================="
-          cat wrapper_error.txt
-          echo "====================================="
-          exit 1 # Dừng ngay lập tức nếu bước này lỗi
-
-      # 4. BUILD APK (Chỉ chạy nếu bước trên thành công)
+      # 2. CHẠY BUILD & GHI LOG RA FILE (Không in rác ra màn hình)
       - name: Build Debug APK
-        id: build_debug
-        if: env.WRAPPER_FAILED != 'true'
+        id: build_step
         run: |
           cd duix-android/dh_aigc_android
-          echo "🚀 Starting Build..."
-          ./gradlew assembleDebug --no-daemon --stacktrace --info > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
-        continue-on-error: true
+          echo "🚀 Building... (Please wait)"
+          
+          # Lưu toàn bộ log vào file để lọc sau
+          gradle assembleDebug --no-daemon --stacktrace --info > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
 
-      # 5. IN LOG LỖI BUILD
-      - name: Print Full Build Log (if failed)
+      # 3. LỌC VÀ HIỂN THỊ LỖI NGAY LẬP TỨC (Đây là bước bạn cần)
+      - name: 🔴 SHOW BUILD ERRORS
         if: env.BUILD_FAILED == 'true'
         run: |
           cd duix-android/dh_aigc_android
-          echo "📋 FULL BUILD LOG:"
-          echo "====================================="
-          cat build_log.txt
-          echo "====================================="
+          echo "========================================================="
+          echo "🔥 PHÁT HIỆN LỖI (ERRORS DETECTED) - COPY ĐOẠN DƯỚI ĐÂY 🔥"
+          echo "========================================================="
+          
+          # Dùng grep để tìm các từ khóa lỗi và in ra 10 dòng xung quanh nó
+          # -n: hiện số dòng
+          # -C 10: hiện 10 dòng context trước và sau lỗi để dễ hiểu ngữ cảnh
+          # -E: tìm nhiều từ khóa cùng lúc
+          grep -n -C 10 -E "(FAILURE:|FAILED|Exception|error|What went wrong:|Caused by:)" build_log.txt
+          
+          echo "========================================================="
+          echo "❌ Quy trình sẽ dừng tại đây. Hãy sửa lỗi trên."
+          exit 1
 
-      - name: Upload Build Log
-        if: always() # Luôn upload log dù thành công hay thất bại
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            duix-android/dh_aigc_android/wrapper_error.txt
-            duix-android/dh_aigc_android/build_log.txt
-
-      - name: Upload Debug APK
-        if: env.BUILD_FAILED != 'true' && env.WRAPPER_FAILED != 'true'
+      # 4. UPLOAD APK (Chỉ chạy nếu KHÔNG có lỗi)
+      - name: Upload APK
+        if: env.BUILD_FAILED != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: debug-apk
-          path: duix-android/dh_aigc_android/app/build/outputs/apk/debug/app-debug.apk
+          path: '**/*.apk'
