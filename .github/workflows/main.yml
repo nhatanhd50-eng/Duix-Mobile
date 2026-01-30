@@ -1,4 +1,4 @@
-name: Build APK with Gradle 9.0 & Logs
+name: Build APK with Gradle 9.0 & Logs (Fixed Path)
 
 on:
   push:
@@ -13,36 +13,58 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup Java JDK
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
-    # Tạo gradlew nếu chưa có, và đảm bảo dùng Gradle 9.0
-    - name: Generate Gradle Wrapper for 9.0
+    # Di chuyển vào đúng thư mục chứa project Android
+    - name: Change working directory
       run: |
-        if [ ! -f gradlew ]; then
-          echo "gradlew not found, generating with Gradle 9.0..."
-          gradle wrapper --gradle-version 9.0
+        cd duix-android/dh_aigc_android
+        pwd
+        ls -la
+
+    # Kiểm tra có phải project Gradle không (có settings.gradle không)
+    - name: Check if Gradle project exists
+      id: gradle_check
+      run: |
+        cd duix-android/dh_aigc_android
+        if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
+          echo "gradle_project_exists=true" >> $GITHUB_OUTPUT
         else
-          echo "gradlew already exists, updating wrapper to 9.0..."
-          ./gradlew wrapper --gradle-version 9.0
+          echo "gradle_project_exists=false" >> $GITHUB_OUTPUT
         fi
-        chmod +x gradlew
+
+    # Nếu thiếu gradlew/gradlew.bat, copy từ template hoặc tạo mới
+    - name: Create gradlew if missing
+      run: |
+        cd duix-android/dh_aigc_android
+        if [ ! -f "gradlew" ]; then
+          echo "#!/bin/sh" > gradlew
+          echo "exec ./gradlew.bat \"\$@\"" >> gradlew
+          chmod +x gradlew
+          echo "@echo off" > gradlew.bat
+          echo "set DIRNAME=%~dp0" >> gradlew.bat
+          echo "if \"%OS%\" == \"Windows_NT\" setlocal" >> gradlew.bat
+          echo "set APP_BASE_NAME=%~n0" >> gradlew.bat
+          echo "set APP_HOME=%DIRNAME%" >> gradlew.bat
+          echo "java -jar \"%APP_HOME%gradle/wrapper/gradle-wrapper.jar\" %*" >> gradlew.bat
+          echo "exit /b %ERRORLEVEL%" >> gradlew.bat
+        fi
+
+    # Cập nhật Gradle Wrapper lên 9.0 (nếu cần)
+    - name: Update Gradle Wrapper to 9.0
+      run: |
+        cd duix-android/dh_aigc_android
+        ./gradlew wrapper --gradle-version 9.0 --distribution-type bin
 
     - name: Check gradlew exists
       run: |
-        ls -la gradlew
+        cd duix-android/dh_aigc_android
+        ls -la gradlew gradlew.bat
         ./gradlew --version
 
     # Build APK với log full
     - name: Build Debug APK
       id: build_debug
       run: |
+        cd duix-android/dh_aigc_android
         ./gradlew assembleDebug --no-daemon --stacktrace --info > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
       continue-on-error: true
 
@@ -50,6 +72,7 @@ jobs:
     - name: 🔍 Print Full Build Log (Copy All Below)
       if: env.BUILD_FAILED == 'true'
       run: |
+        cd duix-android/dh_aigc_android
         echo "📋 FULL BUILD LOG (COPY ALL BELOW):"
         echo "====================================="
         cat build_log.txt
@@ -63,7 +86,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: build-failure-log
-        path: build_log.txt
+        path: duix-android/dh_aigc_android/build_log.txt
 
     # Upload APK nếu build success
     - name: 📦 Upload Debug APK
@@ -71,11 +94,11 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: debug-apk
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: duix-android/dh_aigc_android/app/build/outputs/apk/debug/app-debug.apk
 
     # Upload toàn bộ log dù có lỗi hay không
     - name: 📤 Upload Full Build Log (Always)
       uses: actions/upload-artifact@v4
       with:
         name: full-build-log
-        path: build_log.txt
+        path: duix-android/dh_aigc_android/build_log.txt
