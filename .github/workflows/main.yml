@@ -1,20 +1,21 @@
-name: Build APK (Old Logic + LLM Memory Fix)
+name: Build APK (Stable + Cerebras API)
 
 on:
   push:
     branches: ["main", "develop"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch: # Cho phép bấm nút chạy thủ công
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. Clone code của bạn (Code hiện tại chứa LLM/TTS)
+      # 1. Tải source code
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      # 2. Cài Java 17 (Chuẩn theo YAML cũ)
+      # 2. Cài đặt Java 17 (Bắt buộc cho Android Build Tools mới)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -25,30 +26,33 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 4. Cài CMake 3.18.1 THỦ CÔNG (Lấy từ YAML cũ - Đã chứng minh hoạt động tốt)
-      - name: Install CMake 3.18.1 (Manual)
+      # 4. Cài CMake 3.18.1 Thủ Công (Đây là cách ổn định nhất cho dự án của bạn)
+      - name: Install CMake 3.18.1 (Manual Fix)
         run: |
           echo "Downloading CMake 3.18.1..."
           wget -q https://github.com/Kitware/CMake/releases/download/v3.18.1/cmake-3.18.1-Linux-x86_64.tar.gz
           tar -xzf cmake-3.18.1-Linux-x86_64.tar.gz
           
+          # Tạo đường dẫn đúng chuẩn Android SDK
           mkdir -p $ANDROID_HOME/cmake/3.18.1
           cp -r cmake-3.18.1-Linux-x86_64/* $ANDROID_HOME/cmake/3.18.1/
           
           echo "✅ CMake 3.18.1 installed at $ANDROID_HOME/cmake/3.18.1"
 
-      # 5. Khôi phục Gradle 8.3 (Lấy từ YAML cũ - Để tương thích code cũ)
-      - name: Restore Gradlew (Gradle 8.3)
+      # 5. Khôi phục Gradle 8.3 (Phiên bản tương thích tốt nhất với code cũ)
+      - name: Restore Gradlew (Force Gradle 8.3)
         run: |
           cd duix-android/dh_aigc_android
           
-          echo "Resetting Gradle Wrapper to 8.3..."
+          echo "Resetting Gradle Wrapper..."
           rm -rf gradlew gradlew.bat gradle/
           mkdir -p gradle/wrapper
           
+          # Tải Wrapper 8.3 chuẩn
           curl -L https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradlew -o gradlew
           curl -L https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
           
+          # Tạo file properties trỏ về 8.3
           cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
           distributionBase=GRADLE_USER_HOME
           distributionPath=wrapper/dists
@@ -59,38 +63,47 @@ jobs:
           
           chmod +x gradlew
 
-      # 6. BUILD (CÓ FIX RAM CHO LLM/TTS)
+      # 6. BUILD APK (Có cấu hình chống Crash RAM)
       - name: Build Debug APK
         id: build_step
         run: |
           cd duix-android/dh_aigc_android
-          echo "🚀 Building with Gradle 8.3 & High Memory..."
+          echo "🚀 Building..."
           
-          # QUAN TRỌNG: Thêm tham số cấp 6GB RAM và in-process
-          # Nếu không có dòng này, code LLM nặng sẽ làm sập build
+          # Cấu hình quan trọng:
+          # -Xmx6g: Cấp 6GB RAM (Max của Github Runner)
+          # in-process: Ép Kotlin chạy chung tiến trình để tránh lỗi Worker chết
           ./gradlew assembleDebug \
             --stacktrace \
-            --info \
             -Dorg.gradle.jvmargs="-Xmx6g -XX:+HeapDumpOnOutOfMemoryError" \
             -Dkotlin.compiler.execution.strategy=in-process \
             > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
 
-      # 7. HIỂN THỊ LỖI (200 dòng cuối như bạn yêu cầu)
-      - name: 🔴 SHOW ERROR LOG (Last 200 lines)
+      # 7. TÌM LỖI CODE THÔNG MINH (Nếu build thất bại)
+      - name: 🔴 SHOW ACTUAL ERRORS
         if: env.BUILD_FAILED == 'true'
         run: |
           cd duix-android/dh_aigc_android
           echo "========================================================="
-          echo "👇 ĐÂY MỚI LÀ LỖI (LAST 200 LINES) - COPY ĐOẠN NÀY 👇"
+          echo "🔥 PHÁT HIỆN LỖI (ERRORS FOUND) 🔥"
           echo "========================================================="
-          tail -n 200 build_log.txt
+          
+          # Tìm các dòng báo lỗi cú pháp code (e: ...)
+          if grep -q "e: " build_log.txt; then
+            echo "👇 LỖI CODE CỦA BẠN Ở ĐÂY:"
+            grep -C 3 "e: " build_log.txt
+          else
+             echo "⚠️ Không tìm thấy lỗi cú pháp cụ thể. Đang in các lỗi hệ thống:"
+             grep -C 5 -E "(FAILURE:|FAILED|What went wrong:|Exception)" build_log.txt
+          fi
+          
           echo "========================================================="
           exit 1
 
-      # 8. Upload APK (Tự động tìm file)
+      # 8. Upload APK (Chỉ chạy khi thành công)
       - name: Upload APK
         if: env.BUILD_FAILED != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Duix-Mobile-Debug-APK
+          name: Duix-Mobile-APK
           path: '**/*.apk'
