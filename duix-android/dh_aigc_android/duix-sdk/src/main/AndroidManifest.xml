@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="ai.guiji.duix.sdk">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- ĐÃ XÓA thuộc tính package="ai.guiji.duix.sdk" ở dòng trên -->
 
-    <!-- KHAI BÁO QUYỀN CHO SDK -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Thẻ application rỗng cho library module, nhưng phải đúng cú pháp -->
     <application>
     </application>
 
