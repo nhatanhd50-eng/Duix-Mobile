@@ -53,14 +53,11 @@ public class DUIX {
             File duixDir = mContext.getExternalFilesDir("duix");
             File baseConfigDir = new File(duixDir + "/model/gj_dh_res");
             
-            // --- FIX CRASH 1: Kiểm tra thư mục tài nguyên chung ---
             if (!baseConfigDir.exists()) {
-                Log.e(TAG, "CRITICAL: Base Config Missing at " + baseConfigDir.getAbsolutePath());
                 if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_INIT_ERROR, "Base Resource missing", null);
                 return;
             }
 
-            // --- FIX CRASH 2: Logic tìm đường dẫn Model thông minh hơn ---
             String dirName = modelName;
             if (modelName.startsWith("http")) {
                  try { dirName = modelName.substring(modelName.lastIndexOf("/") + 1).replace(".zip", ""); } catch (Exception e) {}
@@ -68,19 +65,12 @@ public class DUIX {
             
             File modelDir = new File(duixDir + "/model", dirName);
             
-            // Tự động tìm file config.json nếu bị lồng thư mục (Nested Folder Fix)
+            // Fix lỗi model bị lồng thư mục
             if (modelDir.exists() && !new File(modelDir, "config.json").exists()) {
                 File[] subFiles = modelDir.listFiles(File::isDirectory);
                 if (subFiles != null && subFiles.length > 0) {
-                    Log.w(TAG, "Model directory seems nested. Switching to: " + subFiles[0].getAbsolutePath());
                     modelDir = subFiles[0];
                 }
-            }
-            
-            if (!new File(modelDir, "config.json").exists()) {
-                Log.e(TAG, "CRITICAL: config.json NOT FOUND in " + modelDir.getAbsolutePath());
-                if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_INIT_ERROR, "Invalid Model Path", null);
-                return;
             }
 
             if (mRenderThread != null) {
@@ -108,9 +98,7 @@ public class DUIX {
             
             mRenderThread.setName("DUIXRender-Thread");
             mRenderThread.start();
-            
         } catch (Exception e) {
-            Log.e(TAG, "CRASH PREVENTED in DUIX.init(): " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -128,16 +116,13 @@ public class DUIX {
     public void startMotion(String name, boolean now) {
         if (mRenderThread != null) mRenderThread.requireMotion(name, now);
     }
-
     public void startRandomMotion(boolean now) {
         if (mRenderThread != null) mRenderThread.requireRandomMotion(now);
     }
-
     public void stopAudio() {
         if (mRenderThread != null) mRenderThread.stopPlayAudio();
         if (mTts != null) mTts.stop();
     }
-    
     public void playAudio(String wavPath) {}
 
     public void release() {
@@ -161,11 +146,15 @@ public class DUIX {
         if (mRenderThread != null) mRenderThread.setReporter(reporter);
     }
 
+    // --- LOGIC AI CEREBRAS ---
     public void askAndSpeak(final String text) {
         if (!isReady()) return;
         commonExecutor.execute(() -> {
             String aiResponse = callCerebrasApi(text);
             if (aiResponse != null && !aiResponse.isEmpty()) {
+                // Gửi text về UI để hiển thị (thông qua callback)
+                if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_AI_RESPONSE, aiResponse, null);
+                // Đọc text
                 speakWithLipSync(aiResponse);
             }
         });
