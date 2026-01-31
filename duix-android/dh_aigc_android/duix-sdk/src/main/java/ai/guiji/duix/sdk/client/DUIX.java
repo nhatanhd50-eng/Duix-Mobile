@@ -1,7 +1,6 @@
 package ai.guiji.duix.sdk.client;
 
 import android.content.Context;
-import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
@@ -50,47 +49,70 @@ public class DUIX {
     }
 
     public void init() {
-        File duixDir = mContext.getExternalFilesDir("duix");
-        File baseConfigDir = new File(duixDir + "/model/gj_dh_res");
-        File baseConfigTag = new File(duixDir + "/model/tmp/gj_dh_res");
-        
-        if (!baseConfigDir.exists() || !baseConfigTag.exists()) {
-            if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_INIT_ERROR, "Resource missing", null);
-            return;
-        }
+        try {
+            File duixDir = mContext.getExternalFilesDir("duix");
+            File baseConfigDir = new File(duixDir + "/model/gj_dh_res");
+            
+            // --- FIX CRASH 1: Kiểm tra thư mục tài nguyên chung ---
+            if (!baseConfigDir.exists()) {
+                Log.e(TAG, "CRITICAL: Base Config Missing at " + baseConfigDir.getAbsolutePath());
+                if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_INIT_ERROR, "Base Resource missing", null);
+                return;
+            }
 
-        String dirName = modelName;
-        if (modelName.startsWith("http")) {
-             try { dirName = modelName.substring(modelName.lastIndexOf("/") + 1).replace(".zip", ""); } catch (Exception e) {}
-        }
-        
-        File modelDir = new File(duixDir + "/model", dirName);
-        
-        if (mRenderThread != null) {
-            mRenderThread.stopPreview();
-            mRenderThread = null;
-        }
-        
-        mRenderThread = new RenderThread(mContext, modelDir, renderSink, mVolume, new RenderThread.RenderCallback() {
-            @Override
-            public void onInitResult(int code, int subCode, String message, ModelInfo modelInfo) {
-                if (code == 0) {
-                    isReady = true;
-                    if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_INIT_READY, "init ok", modelInfo);
-                    initTts(); 
-                } else {
-                    if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_INIT_ERROR, message, null);
+            // --- FIX CRASH 2: Logic tìm đường dẫn Model thông minh hơn ---
+            String dirName = modelName;
+            if (modelName.startsWith("http")) {
+                 try { dirName = modelName.substring(modelName.lastIndexOf("/") + 1).replace(".zip", ""); } catch (Exception e) {}
+            }
+            
+            File modelDir = new File(duixDir + "/model", dirName);
+            
+            // Tự động tìm file config.json nếu bị lồng thư mục (Nested Folder Fix)
+            if (modelDir.exists() && !new File(modelDir, "config.json").exists()) {
+                File[] subFiles = modelDir.listFiles(File::isDirectory);
+                if (subFiles != null && subFiles.length > 0) {
+                    Log.w(TAG, "Model directory seems nested. Switching to: " + subFiles[0].getAbsolutePath());
+                    modelDir = subFiles[0];
                 }
             }
-            @Override public void onPlayStart() { if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_AUDIO_PLAY_START, "play start", null); }
-            @Override public void onPlayEnd() { if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_AUDIO_PLAY_END, "play end", null); }
-            @Override public void onPlayError(int code, String msg) { if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_AUDIO_PLAY_ERROR, msg, null); }
-            @Override public void onMotionPlayStart(String name) { if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_MOTION_START, "", null); }
-            @Override public void onMotionPlayComplete(String name) { if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_MOTION_END, "", null); }
-        }, reporter);
-        
-        mRenderThread.setName("DUIXRender-Thread");
-        mRenderThread.start();
+            
+            if (!new File(modelDir, "config.json").exists()) {
+                Log.e(TAG, "CRITICAL: config.json NOT FOUND in " + modelDir.getAbsolutePath());
+                if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_INIT_ERROR, "Invalid Model Path", null);
+                return;
+            }
+
+            if (mRenderThread != null) {
+                mRenderThread.stopPreview();
+                mRenderThread = null;
+            }
+            
+            mRenderThread = new RenderThread(mContext, modelDir, renderSink, mVolume, new RenderThread.RenderCallback() {
+                @Override
+                public void onInitResult(int code, int subCode, String message, ModelInfo modelInfo) {
+                    if (code == 0) {
+                        isReady = true;
+                        if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_INIT_READY, "init ok", modelInfo);
+                        initTts(); 
+                    } else {
+                        if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_INIT_ERROR, message, null);
+                    }
+                }
+                @Override public void onPlayStart() { if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_AUDIO_PLAY_START, "play start", null); }
+                @Override public void onPlayEnd() { if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_AUDIO_PLAY_END, "play end", null); }
+                @Override public void onPlayError(int code, String msg) { if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_AUDIO_PLAY_ERROR, msg, null); }
+                @Override public void onMotionPlayStart(String name) { if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_MOTION_START, "", null); }
+                @Override public void onMotionPlayComplete(String name) { if (mCallback != null) mCallback.onEvent(Constant.CALLBACK_EVENT_MOTION_END, "", null); }
+            }, reporter);
+            
+            mRenderThread.setName("DUIXRender-Thread");
+            mRenderThread.start();
+            
+        } catch (Exception e) {
+            Log.e(TAG, "CRASH PREVENTED in DUIX.init(): " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     public boolean isReady() { return isReady; }
@@ -103,32 +125,20 @@ public class DUIX {
     public void stopPush() { if (mRenderThread != null) mRenderThread.stopPush(); }
     public void pushPcm(byte[] buffer) { if (mRenderThread != null) mRenderThread.pushAudio(buffer.clone()); }
 
-    // --- CÁC HÀM BỊ THIẾU (ĐÃ THÊM LẠI) ---
     public void startMotion(String name, boolean now) {
-        if (mRenderThread != null) {
-            mRenderThread.requireMotion(name, now);
-        }
+        if (mRenderThread != null) mRenderThread.requireMotion(name, now);
     }
 
     public void startRandomMotion(boolean now) {
-        if (mRenderThread != null) {
-            mRenderThread.requireRandomMotion(now);
-        }
+        if (mRenderThread != null) mRenderThread.requireRandomMotion(now);
     }
 
     public void stopAudio() {
-        if (mRenderThread != null) {
-            mRenderThread.stopPlayAudio();
-        }
-        if (mTts != null) {
-            mTts.stop();
-        }
+        if (mRenderThread != null) mRenderThread.stopPlayAudio();
+        if (mTts != null) mTts.stop();
     }
     
-    // --- GIỮ NGUYÊN CODE CŨ ĐỂ TƯƠNG THÍCH ---
-    public void playAudio(String wavPath) {
-        // Logic cũ để play file wav nếu cần test
-    }
+    public void playAudio(String wavPath) {}
 
     public void release() {
         isReady = false;
@@ -150,8 +160,6 @@ public class DUIX {
         this.reporter = reporter;
         if (mRenderThread != null) mRenderThread.setReporter(reporter);
     }
-
-    // --- LOGIC AI & TTS ---
 
     public void askAndSpeak(final String text) {
         if (!isReady()) return;
