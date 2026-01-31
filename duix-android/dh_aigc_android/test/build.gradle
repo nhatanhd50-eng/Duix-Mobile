@@ -1,54 +1,41 @@
 plugins {
-    id 'com.android.application'
+    id 'com.android.library'
     id 'org.jetbrains.kotlin.android'
 }
 
-static def getCurrentTime() {
-    return new Date().format("yyyy-MM-dd-HH-mm", TimeZone.getTimeZone("GMT+08:00"))
-}
-
 android {
-    namespace 'ai.guiji.duix.test' // ✅ QUAN TRỌNG: Dòng này sửa lỗi Manifest
+    namespace 'ai.guiji.duix.sdk'
     compileSdk 34
 
     defaultConfig {
-        applicationId "ai.guiji.duix.test"
         minSdk 24
         targetSdk 34
-        versionCode 13
-        versionName '4.1.1'
-    }
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
 
-    // ⚠️ Đã comment lại phần ký số (Signing) để tránh lỗi thiếu file .jks trên GitHub
-    /*
-    signingConfigs {
-        release {
-            storeFile file('../demo.jks')
-            storePassword '123456'
-            keyAlias 'demo'
-            keyPassword '123456'
+        // --- QUAN TRỌNG: FIX LỖI CRASH ---
+        ndk {
+            // Hỗ trợ cả máy đời cũ (v7a) và đời mới (v8a)
+            abiFilters "armeabi-v7a", "arm64-v8a"
         }
+        // ---------------------------------
     }
-    */
 
     buildTypes {
-        debug {
+        release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            // signingConfig signingConfigs.release  <-- Đã bỏ dòng này để dùng Default Debug Key
-        }
-        release {
-            minifyEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            // signingConfig signingConfigs.release <-- Bỏ tạm để build Release không lỗi (nếu cần)
-
-            applicationVariants.all { variant ->
-                variant.outputs.all {
-                    outputFileName = "duix_mobile_test_${buildType.name}_${getCurrentTime()}_${defaultConfig.versionName}.apk"
-                }
-            }
         }
     }
+    
+    // Giữ cấu hình C++ (Nếu project gốc có)
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.18.1"
+        }
+    }
+    
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -56,39 +43,13 @@ android {
     kotlinOptions {
         jvmTarget = '1.8'
     }
-    buildFeatures {
-        viewBinding true
-    }
-    composeOptions {
-        kotlinCompilerExtensionVersion '1.4.3'
-    }
-    packaging {
-        resources {
-            excludes += '/META-INF/{AL2.0,LGPL2.1}'
-        }
-    }
-
-    lint {
-        baseline = file("lint-baseline.xml")
-    }
-    lintOptions{
-        checkReleaseBuilds false
-        abortOnError false // Thêm dòng này để lờ đi các lỗi cảnh báo nhỏ
-    }
 }
 
 dependencies {
-    implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')
-    
-    // Nâng cấp thư viện core để tương thích Android mới
     implementation 'androidx.core:core-ktx:1.12.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1' // Đã nâng version
-    implementation 'com.google.android.material:material:1.11.0' // Đã nâng version
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation "androidx.activity:activity:1.8.0"
-    
-    implementation 'com.github.bumptech.glide:glide:4.12.0'
-
-    implementation project(":duix-sdk")
-    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
