@@ -1,58 +1,44 @@
-name: Build APK (Stable + Cerebras API)
+name: Build APK (Auto-Fix Namespace)
 
 on:
   push:
     branches: ["main", "develop"]
   pull_request:
     branches: ["main"]
-  workflow_dispatch: # Cho phép bấm nút chạy thủ công
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. Tải source code
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      # 2. Cài đặt Java 17 (Bắt buộc cho Android Build Tools mới)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # 3. Setup Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 4. Cài CMake 3.18.1 Thủ Công (Đây là cách ổn định nhất cho dự án của bạn)
-      - name: Install CMake 3.18.1 (Manual Fix)
+      - name: Install CMake 3.18.1 (Manual)
         run: |
           echo "Downloading CMake 3.18.1..."
           wget -q https://github.com/Kitware/CMake/releases/download/v3.18.1/cmake-3.18.1-Linux-x86_64.tar.gz
           tar -xzf cmake-3.18.1-Linux-x86_64.tar.gz
-          
-          # Tạo đường dẫn đúng chuẩn Android SDK
           mkdir -p $ANDROID_HOME/cmake/3.18.1
           cp -r cmake-3.18.1-Linux-x86_64/* $ANDROID_HOME/cmake/3.18.1/
-          
-          echo "✅ CMake 3.18.1 installed at $ANDROID_HOME/cmake/3.18.1"
+          echo "✅ CMake 3.18.1 installed."
 
-      # 5. Khôi phục Gradle 8.3 (Phiên bản tương thích tốt nhất với code cũ)
       - name: Restore Gradlew (Force Gradle 8.3)
         run: |
           cd duix-android/dh_aigc_android
-          
-          echo "Resetting Gradle Wrapper..."
           rm -rf gradlew gradlew.bat gradle/
           mkdir -p gradle/wrapper
-          
-          # Tải Wrapper 8.3 chuẩn
           curl -L https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradlew -o gradlew
           curl -L https://raw.githubusercontent.com/gradle/gradle/v8.3.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-          
-          # Tạo file properties trỏ về 8.3
           cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
           distributionBase=GRADLE_USER_HOME
           distributionPath=wrapper/dists
@@ -60,47 +46,65 @@ jobs:
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
           EOF
-          
           chmod +x gradlew
 
-      # 6. BUILD APK (Có cấu hình chống Crash RAM)
+      # --- BƯỚC MỚI: TỰ ĐỘNG SỬA FILE ĐỂ KHỚP VỚI GRADLE MỚI ---
+      - name: Auto-Fix Namespace (AGP 8.0 Compatibility)
+        run: |
+          cd duix-android/dh_aigc_android
+          
+          echo "🔧 Fixing SDK Module..."
+          # 1. Xóa package="..." trong Manifest của SDK
+          sed -i 's/package="ai.guiji.duix.sdk"//g' duix-sdk/src/main/AndroidManifest.xml
+          
+          # 2. Chèn namespace vào build.gradle của SDK (Ngay sau dòng 'android {')
+          sed -i '/android {/a \    namespace "ai.guiji.duix.sdk"' duix-sdk/build.gradle
+          
+          echo "🔧 Fixing Test/App Module..."
+          # 3. Xóa package="..." trong Manifest của App (Dựa vào log lỗi trước có thể là thư mục test hoặc app)
+          if [ -f "test/src/main/AndroidManifest.xml" ]; then
+             sed -i 's/package="ai.guiji.duix.test"//g' test/src/main/AndroidManifest.xml
+          fi
+          if [ -f "app/src/main/AndroidManifest.xml" ]; then
+             sed -i 's/package="ai.guiji.duix.test"//g' app/src/main/AndroidManifest.xml
+          fi
+
+          # 4. Chèn namespace vào build.gradle của App
+          if [ -f "test/build.gradle" ]; then
+             sed -i '/android {/a \    namespace "ai.guiji.duix.test"' test/build.gradle
+          fi
+          if [ -f "app/build.gradle" ]; then
+             sed -i '/android {/a \    namespace "ai.guiji.duix.test"' app/build.gradle
+          fi
+          
+          echo "✅ Auto-fix complete!"
+
       - name: Build Debug APK
         id: build_step
         run: |
           cd duix-android/dh_aigc_android
           echo "🚀 Building..."
-          
-          # Cấu hình quan trọng:
-          # -Xmx6g: Cấp 6GB RAM (Max của Github Runner)
-          # in-process: Ép Kotlin chạy chung tiến trình để tránh lỗi Worker chết
           ./gradlew assembleDebug \
             --stacktrace \
             -Dorg.gradle.jvmargs="-Xmx6g -XX:+HeapDumpOnOutOfMemoryError" \
             -Dkotlin.compiler.execution.strategy=in-process \
             > build_log.txt 2>&1 || echo "BUILD_FAILED=true" >> $GITHUB_ENV
 
-      # 7. TÌM LỖI CODE THÔNG MINH (Nếu build thất bại)
       - name: 🔴 SHOW ACTUAL ERRORS
         if: env.BUILD_FAILED == 'true'
         run: |
           cd duix-android/dh_aigc_android
           echo "========================================================="
-          echo "🔥 PHÁT HIỆN LỖI (ERRORS FOUND) 🔥"
+          echo "🔥 LOG LỖI (ERRORS) 🔥"
           echo "========================================================="
-          
-          # Tìm các dòng báo lỗi cú pháp code (e: ...)
           if grep -q "e: " build_log.txt; then
-            echo "👇 LỖI CODE CỦA BẠN Ở ĐÂY:"
             grep -C 3 "e: " build_log.txt
           else
-             echo "⚠️ Không tìm thấy lỗi cú pháp cụ thể. Đang in các lỗi hệ thống:"
-             grep -C 5 -E "(FAILURE:|FAILED|What went wrong:|Exception)" build_log.txt
+             grep -C 10 -E "(FAILURE:|FAILED|What went wrong:|Exception)" build_log.txt
           fi
-          
           echo "========================================================="
           exit 1
 
-      # 8. Upload APK (Chỉ chạy khi thành công)
       - name: Upload APK
         if: env.BUILD_FAILED != 'true'
         uses: actions/upload-artifact@v4
