@@ -1,6 +1,5 @@
 package ai.guiji.duix.test.ui.activity
 
-import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import android.text.TextUtils
@@ -21,8 +20,7 @@ class MainActivity : BaseActivity() {
 
     val models = arrayListOf(
         "https://github.com/duixcom/Duix-Mobile/releases/download/v1.0.0/bendi3_20240518.zip",
-        "https://github.com/duixcom/Duix-Mobile/releases/download/v1.0.0/airuike_20240409.zip",
-        "https://github.com/duixcom/Duix-Mobile/releases/download/v1.0.0/675429759852613_7f8d9388a4213080b1820b83dd057cfb_optim_m80.zip"
+        "https://github.com/duixcom/Duix-Mobile/releases/download/v1.0.0/airuike_20240409.zip"
     )
 
     private var mBaseConfigUrl = ""
@@ -35,145 +33,71 @@ class MainActivity : BaseActivity() {
 
         binding.tvSdkVersion.text = "SDK Version: ${BuildConfig.VERSION_NAME}"
 
-        // --- SỬA LỖI Ở ĐÂY ---
-        // Đổi tên hàm từ override fun onFinish -> override fun onSelect
         binding.btnMoreModel.setOnClickListener {
             val modelSelectorDialog = ModelSelectorDialog(mContext, models, object : ModelSelectorDialog.Listener {
-                override fun onSelect(url: String) { // <--- ĐÃ SỬA TÊN HÀM
+                override fun onSelect(url: String) { // Tên hàm đã sửa đúng
                     binding.etUrl.setText(url.trim())
                 }
             })
             modelSelectorDialog.show()
         }
-        // ---------------------
 
-        binding.btnPlay.setOnClickListener {
-            play()
-        }
+        binding.btnPlay.setOnClickListener { play() }
     }
 
     private fun play() {
         mBaseConfigUrl = binding.etBaseConfig.text.toString().trim()
         mModelUrl = binding.etUrl.text.toString().trim()
-
-        if (TextUtils.isEmpty(mBaseConfigUrl)) {
-            Toast.makeText(mContext, R.string.base_config_cannot_be_empty, Toast.LENGTH_SHORT).show()
+        if (TextUtils.isEmpty(mBaseConfigUrl) || TextUtils.isEmpty(mModelUrl)) {
+            Toast.makeText(mContext, "Nhập URL model", Toast.LENGTH_SHORT).show()
             return
         }
-        if (TextUtils.isEmpty(mModelUrl)) {
-            Toast.makeText(mContext, R.string.model_url_cannot_be_empty, Toast.LENGTH_SHORT).show()
-            return
-        }
-
         checkBaseConfig()
     }
 
     private fun checkBaseConfig() {
-        if (VirtualModelUtil.checkBaseConfig(mContext)) {
-            checkModel()
-        } else {
-            baseConfigDownload()
-        }
+        if (VirtualModelUtil.checkBaseConfig(mContext)) checkModel() else baseConfigDownload()
     }
 
     private fun checkModel() {
-        if (VirtualModelUtil.checkModel(mContext, mModelUrl)) {
-            jumpPlayPage()
-        } else {
-            modelDownload()
-        }
+        if (VirtualModelUtil.checkModel(mContext, mModelUrl)) jumpPlayPage() else modelDownload()
     }
 
     private fun jumpPlayPage() {
         val intent = Intent(mContext, CallActivity::class.java)
         intent.putExtra("modelUrl", mModelUrl)
-        val debug = binding.switchDebug.isChecked
-        intent.putExtra("debug", debug)
+        intent.putExtra("debug", binding.switchDebug.isChecked)
         startActivity(intent)
     }
 
     private fun baseConfigDownload() {
-        mLoadingDialog?.dismiss()
-        mLoadingDialog = LoadingDialog(mContext, "Đang tải config cơ bản...")
-        mLoadingDialog?.show()
-
-        VirtualModelUtil.baseConfigDownload(mContext, mBaseConfigUrl, object :
-            VirtualModelUtil.ModelDownloadCallback {
+        mLoadingDialog = LoadingDialog(mContext, "Tải Config...").apply { show() }
+        VirtualModelUtil.baseConfigDownload(mContext, mBaseConfigUrl, object : VirtualModelUtil.ModelDownloadCallback {
             override fun onDownloadProgress(url: String?, current: Long, total: Long) {
-                val progress = (current * 100 / total).toInt()
-                if (progress != mLastProgress) {
-                    mLastProgress = progress
-                    runOnUiThread {
-                        if (mLoadingDialog?.isShowing == true) {
-                            mLoadingDialog?.setContent("Đang tải Config ($progress%)")
-                        }
-                    }
-                }
+                runOnUiThread { if (mLoadingDialog?.isShowing == true) mLoadingDialog?.setContent("Config ${current * 100 / total}%") }
             }
-
-            override fun onUnzipProgress(url: String?, current: Long, total: Long) {
-                runOnUiThread {
-                    if (mLoadingDialog?.isShowing == true) {
-                        mLoadingDialog?.setContent("Đang giải nén Config...")
-                    }
-                }
-            }
-
+            override fun onUnzipProgress(url: String?, current: Long, total: Long) {}
             override fun onDownloadComplete(url: String?, dir: File?) {
-                runOnUiThread {
-                    mLoadingDialog?.dismiss()
-                    checkModel()
-                }
+                runOnUiThread { mLoadingDialog?.dismiss(); checkModel() }
             }
-
             override fun onDownloadFail(url: String?, code: Int, msg: String?) {
-                runOnUiThread {
-                    mLoadingDialog?.dismiss()
-                    Toast.makeText(mContext, "Lỗi tải Config: $msg", Toast.LENGTH_SHORT).show()
-                }
+                runOnUiThread { mLoadingDialog?.dismiss(); Toast.makeText(mContext, "Lỗi: $msg", Toast.LENGTH_SHORT).show() }
             }
         })
     }
 
     private fun modelDownload() {
-        mLoadingDialog?.dismiss()
-        mLoadingDialog = LoadingDialog(mContext, "Đang tải Model 3D...")
-        mLoadingDialog?.show()
-
-        VirtualModelUtil.modelDownload(mContext, mModelUrl, object :
-            VirtualModelUtil.ModelDownloadCallback {
+        mLoadingDialog = LoadingDialog(mContext, "Tải Model...").apply { show() }
+        VirtualModelUtil.modelDownload(mContext, mModelUrl, object : VirtualModelUtil.ModelDownloadCallback {
             override fun onDownloadProgress(url: String?, current: Long, total: Long) {
-                val progress = (current * 100 / total).toInt()
-                if (progress != mLastProgress) {
-                    mLastProgress = progress
-                    runOnUiThread {
-                        if (mLoadingDialog?.isShowing == true) {
-                            mLoadingDialog?.setContent("Đang tải Model ($progress%)")
-                        }
-                    }
-                }
+                runOnUiThread { if (mLoadingDialog?.isShowing == true) mLoadingDialog?.setContent("Model ${current * 100 / total}%") }
             }
-
-            override fun onUnzipProgress(url: String?, current: Long, total: Long) {
-                runOnUiThread {
-                    if (mLoadingDialog?.isShowing == true) {
-                        mLoadingDialog?.setContent("Đang giải nén Model...")
-                    }
-                }
-            }
-
+            override fun onUnzipProgress(url: String?, current: Long, total: Long) {}
             override fun onDownloadComplete(url: String?, dir: File?) {
-                runOnUiThread {
-                    mLoadingDialog?.dismiss()
-                    jumpPlayPage()
-                }
+                runOnUiThread { mLoadingDialog?.dismiss(); jumpPlayPage() }
             }
-
             override fun onDownloadFail(url: String?, code: Int, msg: String?) {
-                runOnUiThread {
-                    mLoadingDialog?.dismiss()
-                    Toast.makeText(mContext, "Lỗi tải Model: $msg", Toast.LENGTH_SHORT).show()
-                }
+                runOnUiThread { mLoadingDialog?.dismiss(); Toast.makeText(mContext, "Lỗi: $msg", Toast.LENGTH_SHORT).show() }
             }
         })
     }
